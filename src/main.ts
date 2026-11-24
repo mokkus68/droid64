@@ -480,7 +480,18 @@ async function enterFullscreen() {
   $('fullscreen').setAttribute('aria-pressed', 'true');
   startAudio();
   try { await monitor.requestFullscreen?.({ navigationUI: 'hide' } as FullscreenOptions); } catch { /* iPhone Safari: CSS-only full page */ }
+  if (desktopPointer.matches) { screenWrap.focus(); showMouse(); }
 }
+// on a computer, full screen shows only the picture; the exit button appears while the mouse moves
+const desktopPointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+let mouseTimer = 0;
+function showMouse() {
+  monitor.dataset.mouse = '1';
+  clearTimeout(mouseTimer);
+  mouseTimer = window.setTimeout(() => { monitor.dataset.mouse = '0'; }, 2000);
+}
+monitor.addEventListener('mousemove', () => { if (monitor.classList.contains('fs')) showMouse(); });
+for (const b of document.querySelectorAll<HTMLButtonElement>('.fs-exit-float')) b.addEventListener('click', (e) => { e.stopPropagation(); leaveFullscreen(); });
 function leaveFullscreen() {
   monitor.classList.remove('fs');
   document.body.classList.remove('fs-open');

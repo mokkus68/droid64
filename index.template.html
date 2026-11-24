@@ -162,6 +162,19 @@ body.fs-open { overflow: hidden; }
 .fs-bar .drive { height: 30px; padding: 0 6px; }
 .fs-bar .drive-group button { padding: 6px 9px; }
 
+/* desktop full screen: only the C64 picture, as large as possible; keyboard and joystick stay off */
+.fs-overlay { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  .monitor.fs { background: #000; padding: 0; }
+  .monitor.fs .vkbd, .monitor.fs #touchpad, .monitor.fs #touchpad[hidden], .monitor.fs .fs-bar { display: none !important; }
+  .monitor.fs #screen-wrap { flex: 1 1 auto; width: 100%; height: 100%; }
+  .monitor.fs #screen { width: 100%; height: 100%; max-width: none; max-height: none; aspect-ratio: auto; object-fit: contain; border-radius: 0; background: #000; }
+  .monitor.fs .fs-overlay { display: flex; position: absolute; top: 12px; right: 12px; gap: 8px; align-items: center; transition: opacity .3s; opacity: .85; }
+  .monitor.fs .fs-exit-float { min-height: 30px; padding: 6px 10px; opacity: 0; transition: opacity .3s; }
+  .monitor.fs[data-mouse="1"] .fs-exit-float { opacity: 1; }
+  .monitor.fs[data-mouse="0"] #screen-wrap { cursor: none; }
+}
+
 /* the keyboard */
 .vkbd { flex-direction: column; gap: 4px; flex: 1 1 auto; min-height: 0; max-height: 460px; padding: 6px; background: #3b2f27; border-radius: 6px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
 .vk-row { display: flex; gap: 3px; flex: 1 1 0; min-height: 0; }
@@ -218,6 +231,10 @@ body.fs-open { overflow: hidden; }
         <span class="hint">Clicca qui per usare tastiera e audio</span>
         <span class="paused-badge">PAUSA</span>
         <span class="typing-badge">digitazione…</span>
+        <span class="fs-overlay" aria-hidden="false">
+          <span class="drive" data-disk="0" data-busy="0" title="Drive 8"><span class="pwr" aria-hidden="true"></span><span class="act" aria-hidden="true"></span><span class="lbl">8</span></span>
+          <button type="button" class="fs-exit-float">Esci (Esc)</button>
+        </span>
       </div>
       <div class="toolbar">
         <button type="button" id="reset">Reset</button>
