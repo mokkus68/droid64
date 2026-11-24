@@ -77,6 +77,12 @@ export class KeyboardMapper {
     if (!K[key]) return;
     this.queue.push({ code: 'v:' + id, map: m(key, shift) });
   }
+  /** Press several matrix keys at once (e.g. SHIFT + letter) from the on-screen keyboard. */
+  virtualDownKeys(id: string, names: string[]) {
+    const keys = names.map((n) => K[n]).filter(Boolean);
+    if (!keys.length) return;
+    this.queue.push({ code: 'v:' + id, map: { keys, shift: names.includes('LSHIFT') ? 'pass' : 'off' } });
+  }
   virtualUp(id: string) {
     this.queue.push({ code: 'v:' + id, map: null });
   }

@@ -4,6 +4,7 @@ import { KeyboardMapper, JOY_KEYS } from './keyboard';
 import { parseD64, parseT64, D64File, DiskImage } from './media';
 import { OPEN_BASIC, OPEN_KERNAL, OPEN_CHARGEN } from './roms';
 import { DEMO } from './demo';
+import { buildKeyboard } from './vkbd';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -418,12 +419,40 @@ $('turbo').addEventListener('click', () => {
   $('turbo').setAttribute('aria-pressed', String(turbo));
   screenWrap.focus();
 });
-$('fullscreen').addEventListener('click', async () => {
-  try {
-    if (document.fullscreenElement) await document.exitFullscreen();
-    else await $('monitor').requestFullscreen();
-  } catch { toast('Schermo intero non disponibile qui'); }
-  screenWrap.focus();
+// ---------- full screen: emulator on top, C64 keyboard or joystick below ----------
+const monitor = $('monitor');
+function setFsMode(mode: string) {
+  monitor.dataset.fsmode = mode;
+  store.set('c64.fsmode', mode);
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-fsmode]')) b.setAttribute('aria-pressed', String(b.dataset.fsmode === mode));
+}
+async function enterFullscreen() {
+  monitor.classList.add('fs');
+  document.body.classList.add('fs-open');
+  $('fullscreen').setAttribute('aria-pressed', 'true');
+  startAudio();
+  try { await monitor.requestFullscreen?.({ navigationUI: 'hide' } as FullscreenOptions); } catch { /* iPhone Safari: CSS-only full page */ }
+}
+function leaveFullscreen() {
+  monitor.classList.remove('fs');
+  document.body.classList.remove('fs-open');
+  $('fullscreen').setAttribute('aria-pressed', 'false');
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+}
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement && monitor.classList.contains('fs')) leaveFullscreen();
+});
+$('fullscreen').addEventListener('click', () => {
+  if (monitor.classList.contains('fs')) leaveFullscreen(); else enterFullscreen();
+});
+$('fs-exit').addEventListener('click', leaveFullscreen);
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-fsmode]')) b.addEventListener('click', () => setFsMode(b.dataset.fsmode!));
+setFsMode(store.get('c64.fsmode') === 'joy' ? 'joy' : 'kbd');
+buildKeyboard($('vkbd'), {
+  down: (id, keys) => keyboard.virtualDownKeys(id, keys),
+  up: (id) => keyboard.virtualUp(id),
+  restore: () => c64.restore(),
+  touched: () => startAudio(),
 });
 const vol = $<HTMLInputElement>('volume');
 vol.value = String(Math.round(volume * 100));

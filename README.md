@@ -8,6 +8,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **SID**: 3 voci, forme d'onda, ADSR, filtro, ring modulation e sync
 - **2× CIA 6526**: timer, TOD, tastiera, joystick, interrupt
 - **Comandi touch**: joystick a schermo (8 direzioni, multitocco con il pulsante di fuoco) e tasti Spazio, Return, Run/Stop, F1–F7, Y, N; si attiva da solo sui telefoni
+- **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone
 - **Caricamento**: PRG, D64 e T64; `LOAD` da device 8 servito direttamente dall'immagine disco (senza emulare il 1541)
 
 ## ROM
@@ -35,6 +36,7 @@ npm run build
 | `src/c64.ts` | mappa di memoria, collegamento dei chip, loop del frame, caricamento |
 | `src/media.ts` | lettura di D64/T64 |
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
+| `src/vkbd.ts` | tastiera C64 a schermo |
 | `src/main.ts` | interfaccia, audio, input |
 | `index.template.html` | pagina e stili; `build.mjs` ci inserisce il bundle |
 | `test/` | test headless con Node (CPU, avvio, BASIC, sprite, dischi) |
