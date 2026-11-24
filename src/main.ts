@@ -279,9 +279,56 @@ function setupTouchControls() {
 // ---------- files ----------
 let disk: (DiskImage & { files: D64File[] }) | null = null;
 
-function onDiskLoad(name: string, ok: boolean) {
+// ---------- drive 8: activity LED and quick commands ----------
+let driveBusyUntil = 0;
+let autoRunNext = false;
+function flashDrive(ms = 900) { driveBusyUntil = performance.now() + ms; }
+function updateDrive() {
+  const busy = performance.now() < driveBusyUntil;
+  for (const el of document.querySelectorAll<HTMLElement>('.drive')) {
+    el.dataset.disk = disk ? '1' : '0';
+    el.dataset.busy = busy ? '1' : '0';
+  }
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.js-dir, .js-run')) b.disabled = !disk;
+}
+
+function onDiskLoad(name: string, ok: boolean, start?: number) {
+  flashDrive();
+  if (ok && autoRunNext && start !== undefined) {
+    c64.typeText(start === 0x0801 ? 'RUN\n' : `SYS${start}\n`);
+  }
+  autoRunNext = false;
   toast(ok ? `Caricato da disco: ${name}` : `File non trovato sul disco: ${name}`);
 }
+
+/** Show the disk directory the C64 way: LOAD"$",8 then LIST. */
+function showDiskDirectory() {
+  if (!disk) { toast('Nessun disco inserito'); return; }
+  startAudio();
+  flashDrive(400);
+  c64.typeText('LOAD"$",8\nLIST\n');
+  toast('Directory: LOAD"$",8 e LIST');
+  screenWrap.focus();
+}
+
+/** Load and start the first program on the disk: LOAD"*",8,1 then RUN (or SYS for machine code). */
+function runFirstProgram() {
+  if (!disk) { toast('Nessun disco inserito'); return; }
+  const first = disk.files.find((f) => f.data);
+  if (!first) { toast('Sul disco non ci sono programmi'); return; }
+  startAudio();
+  c64.reset();
+  for (let i = 0; i < 160; i++) c64.runFrame(); // boot to READY.
+  c64.sid.readPos = c64.sid.writePos;
+  c64.mountDisk(disk);
+  autoRunNext = true;
+  flashDrive(400);
+  c64.typeText('LOAD"*",8,1\n');
+  toast(`Carico il primo programma: "${first.name}"`);
+  screenWrap.focus();
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('.js-dir')) b.addEventListener('click', showDiskDirectory);
+for (const b of document.querySelectorAll<HTMLButtonElement>('.js-run')) b.addEventListener('click', runFirstProgram);
 c64.onDiskLoad = onDiskLoad;
 
 async function handleFiles(files: FileList | File[]) {
@@ -325,6 +372,7 @@ function runFile(file: D64File) {
   startAudio();
   c64.loadAndRun(file.data);
   if (disk) c64.mountDisk(disk);
+  flashDrive();
   toast(`Avviato "${file.name}"`);
   screenWrap.focus();
 }
@@ -501,6 +549,7 @@ function toast(msg: string) {
 let fpsFrames = 0, fpsT = performance.now(), lastFrameCount = 0;
 function updateLeds() {
   const now = performance.now();
+  updateDrive();
   if (now - fpsT > 1000) {
     const frames = framesRun - lastFrameCount;
     lastFrameCount = framesRun;

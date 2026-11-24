@@ -35,7 +35,7 @@ export class C64 implements Bus {
 
   private typeQueue: number[] = [];
   disk: (DiskImage & { files: D64File[] }) | null = null;
-  onDiskLoad: ((name: string, ok: boolean) => void) | null = null;
+  onDiskLoad: ((name: string, ok: boolean, start?: number) => void) | null = null;
 
   constructor(roms: Roms, sampleRate = 44100) {
     this.roms = roms;
@@ -265,7 +265,7 @@ export class C64 implements Bus {
     ram[0xae] = end & 0xff; ram[0xaf] = end >> 8;
     ram[0x90] = 0x40; // EOF
     cpu.x = end & 0xff; cpu.y = end >> 8; cpu.c = 0; cpu.a = 0;
-    this.onDiskLoad?.(label, true);
+    this.onDiskLoad?.(label, true, start);
     return true;
   }
 }
