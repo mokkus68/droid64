@@ -1,0 +1,14 @@
+{
+  "name": "androc64",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Emulatore Commodore 64 in TypeScript per il browser",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit --strict --target es2020 --lib es2020,dom,dom.iterable src/main.ts"
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.2",
+    "typescript": "^5.6.3"
+  }
+}

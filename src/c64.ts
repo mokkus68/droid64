@@ -1,0 +1,283 @@
+// The C64 machine: memory map, chip wiring, frame loop and program loading
+
+import { CPU, Bus } from './cpu';
+import { VIC, CYCLES_PER_LINE, LINES_PER_FRAME } from './vic';
+import { SID } from './sid';
+import { CIA } from './cia';
+import { D64File, DiskImage, matchName, buildDirectoryListing } from './media';
+
+export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
+
+export const JOY_UP = 1, JOY_DOWN = 2, JOY_LEFT = 4, JOY_RIGHT = 8, JOY_FIRE = 16;
+export const CLOCK_HZ = 985248;
+export const FRAME_HZ = CLOCK_HZ / (CYCLES_PER_LINE * LINES_PER_FRAME);
+
+export class C64 implements Bus {
+  ram = new Uint8Array(65536);
+  colorRam = new Uint8Array(1024);
+  cpu: CPU;
+  vic: VIC;
+  sid: SID;
+  cia1 = new CIA();
+  cia2 = new CIA();
+  roms: Roms;
+
+  /** keyboard matrix: keys[column] = bitmask of pressed rows */
+  keys = new Uint8Array(8);
+  joy1 = 0; joy2 = 0;
+
+  // processor port
+  private portDdr = 0x2f; private portData = 0x37;
+  private basicIn = true; private kernalIn = true; private ioIn = true; private charIn = false;
+  private vicBank = 0;
+  private cycleBudget = 0;
+  frameCount = 0;
+
+  private typeQueue: number[] = [];
+  disk: (DiskImage & { files: D64File[] }) | null = null;
+  onDiskLoad: ((name: string, ok: boolean) => void) | null = null;
+
+  constructor(roms: Roms, sampleRate = 44100) {
+    this.roms = roms;
+    this.cpu = new CPU(this);
+    this.sid = new SID(sampleRate);
+    this.vic = new VIC({
+      vicRead: (a: number) => {
+        a &= 0x3fff;
+        if ((this.vicBank & 1) === 0 && (a & 0x3000) === 0x1000) return this.roms.chargen[a & 0xfff];
+        return this.ram[(this.vicBank << 14) | a];
+      },
+      colorRam: this.colorRam,
+    });
+    this.vic.onIrq = (on) => { if (on) this.cpu.irqLines |= 1; else this.cpu.irqLines &= ~1; };
+    this.cia1.onIrq = (on) => { if (on) this.cpu.irqLines |= 2; else this.cpu.irqLines &= ~2; };
+    this.cia2.onIrq = (on) => this.cpu.setNMI(on);
+
+    // CIA1: keyboard + joysticks
+    this.cia1.readPortA = (c) => {
+      let v = (c.pra | ~c.ddra) & 0xff;
+      const pb = (c.prb | ~c.ddrb) & ~this.joy1 & 0xff;
+      // reverse scan: rows driven low pull columns low
+      for (let col = 0; col < 8; col++) if (this.keys[col] & ~pb) v &= ~(1 << col);
+      return v & ~this.joy2;
+    };
+    this.cia1.readPortB = (c) => {
+      let v = (c.prb | ~c.ddrb) & 0xff;
+      const pa = (c.pra | ~c.ddra) & ~this.joy2 & 0xff;
+      for (let col = 0; col < 8; col++) if (!(pa & (1 << col))) v &= ~this.keys[col];
+      return v & ~this.joy1;
+    };
+    // CIA2: VIC bank + serial bus (no devices attached: lines read back as released)
+    this.cia2.readPortA = (c) => {
+      const out = (c.pra | ~c.ddra) & 0xff;
+      const clkIn = out & 0x10 ? 0 : 0x40;
+      const dataIn = out & 0x20 ? 0 : 0x80;
+      return (out & 0x3f) | clkIn | dataIn;
+    };
+    this.cia2.readPortB = () => 0xff;
+    this.cia2.writePorts = (c) => { this.vicBank = 3 - ((c.pra | ~c.ddra) & 3); };
+    this.reset();
+  }
+
+  reset() {
+    // RAM power-up pattern
+    for (let i = 0; i < 65536; i++) this.ram[i] = (i & 0x40) ? 0xff : 0x00;
+    this.colorRam.fill(0);
+    this.portDdr = 0x2f; this.portData = 0x37; this.updatePort();
+    this.cia1.reset(); this.cia2.reset();
+    this.vicBank = 0;
+    this.vic.reset(); this.sid.reset();
+    this.keys.fill(0);
+    this.cpu.irqLines = 0;
+    this.typeQueue = [];
+    this.cpu.reset();
+    this.frameCount = 0;
+  }
+
+  private updatePort() {
+    const bits = (this.portData | ~this.portDdr) & 7;
+    const lo = bits & 1, hi = bits & 2, ch = bits & 4;
+    this.basicIn = !!(lo && hi);
+    this.kernalIn = !!hi;
+    this.ioIn = !!((lo || hi) && ch);
+    this.charIn = !!((lo || hi) && !ch);
+  }
+
+  read(addr: number): number {
+    if (addr < 0xa000) {
+      if (addr > 1) return this.ram[addr];
+      if (addr === 0) return this.portDdr;
+      return (this.portData & this.portDdr) | (~this.portDdr & 0x17);
+    }
+    switch (addr >> 12) {
+      case 0xa: case 0xb: return this.basicIn ? this.roms.basic[addr & 0x1fff] : this.ram[addr];
+      case 0xc: return this.ram[addr];
+      case 0xd:
+        if (this.ioIn) return this.ioRead(addr);
+        if (this.charIn) return this.roms.chargen[addr & 0xfff];
+        return this.ram[addr];
+      default: return this.kernalIn ? this.roms.kernal[addr & 0x1fff] : this.ram[addr];
+    }
+  }
+
+  write(addr: number, v: number) {
+    if (addr < 2) {
+      if (addr === 0) this.portDdr = v; else this.portData = v;
+      this.ram[addr] = v;
+      this.updatePort();
+      return;
+    }
+    if ((addr >> 12) === 0xd && this.ioIn) { this.ioWrite(addr, v); return; }
+    this.ram[addr] = v;
+  }
+
+  private ioRead(addr: number): number {
+    switch ((addr >> 8) & 0xf) {
+      case 0: case 1: case 2: case 3: return this.vic.read(addr);
+      case 4: case 5: case 6: case 7: return this.sid.read(addr);
+      case 8: case 9: case 0xa: case 0xb: return (this.colorRam[addr & 0x3ff] & 0x0f) | 0xf0;
+      case 0xc: return this.cia1.read(addr);
+      case 0xd: return this.cia2.read(addr);
+      default: return 0xff;
+    }
+  }
+
+  private ioWrite(addr: number, v: number) {
+    switch ((addr >> 8) & 0xf) {
+      case 0: case 1: case 2: case 3: this.vic.write(addr, v); break;
+      case 4: case 5: case 6: case 7: this.sid.write(addr, v); break;
+      case 8: case 9: case 0xa: case 0xb: this.colorRam[addr & 0x3ff] = v & 0x0f; break;
+      case 0xc: this.cia1.write(addr, v); break;
+      case 0xd: this.cia2.write(addr, v); break;
+    }
+  }
+
+  /** Run one full video frame (312 raster lines). */
+  runFrame() {
+    const cpu = this.cpu, vic = this.vic, cia1 = this.cia1, cia2 = this.cia2, sid = this.sid;
+    for (let line = 0; line < LINES_PER_FRAME; line++) {
+      const stolen = vic.startLine();
+      if (stolen) { cia1.clock(stolen); cia2.clock(stolen); }
+      this.cycleBudget += CYCLES_PER_LINE - stolen;
+      while (this.cycleBudget > 0) {
+        const c = cpu.step();
+        this.cycleBudget -= c;
+        cia1.clock(c); cia2.clock(c);
+      }
+      sid.clock(CYCLES_PER_LINE);
+      vic.endLine();
+    }
+    cia1.tickTOD(); cia2.tickTOD();
+    this.frameCount++;
+    this.feedKeyboardBuffer();
+  }
+
+  /** NMI from the RESTORE key */
+  restore() { this.cpu.triggerNMI(); }
+
+  // ---------- typing via the KERNAL keyboard buffer ----------
+  typeText(text: string) {
+    for (const ch of text.replace(/\r\n?/g, '\n')) {
+      const code = asciiToPetscii(ch);
+      if (code >= 0) this.typeQueue.push(code);
+    }
+  }
+  get isTyping() { return this.typeQueue.length > 0; }
+
+  private feedKeyboardBuffer() {
+    if (!this.typeQueue.length) return;
+    if (this.ram[0xc6] !== 0) return;
+    let n = 0;
+    while (n < 9 && this.typeQueue.length) {
+      const c = this.typeQueue.shift()!;
+      this.ram[0x277 + n++] = c;
+      if (c === 13) break; // let BASIC process each line
+    }
+    this.ram[0xc6] = n;
+  }
+
+  // ---------- program loading ----------
+  /** Copy a PRG into memory, fix up BASIC pointers. Returns load range. */
+  injectPrg(data: Uint8Array): { start: number; end: number } {
+    const start = data[0] | (data[1] << 8);
+    const body = data.subarray(2);
+    const len = Math.min(body.length, 0x10000 - start);
+    this.ram.set(body.subarray(0, len), start);
+    const end = start + len;
+    if (start === 0x0801 || start === 0x0401) {
+      for (const p of [0x2d, 0x2f, 0x31]) { this.ram[p] = end & 0xff; this.ram[p + 1] = end >> 8; }
+    }
+    this.ram[0xae] = end & 0xff; this.ram[0xaf] = end >> 8;
+    return { start, end };
+  }
+
+  /** Reset, boot to READY, inject the program and start it. */
+  loadAndRun(data: Uint8Array) {
+    this.reset();
+    for (let i = 0; i < 160; i++) this.runFrame(); // boot to READY.
+    this.sid.readPos = this.sid.writePos;
+    const { start } = this.injectPrg(data);
+    this.typeText(start === 0x0801 ? 'RUN\n' : `SYS${start}\n`);
+  }
+
+  mountDisk(disk: (DiskImage & { files: D64File[] }) | null) {
+    this.disk = disk;
+    this.cpu.trap = disk ? (cpu) => this.kernalTrap(cpu) : null;
+  }
+
+  /** Intercept KERNAL LOAD ($FFD5) for device 8 and serve files from the mounted image. */
+  private kernalTrap(cpu: CPU): boolean {
+    if (cpu.pc !== 0xffd5 || !this.kernalIn || !this.disk) return false;
+    const ram = this.ram;
+    if (ram[0xba] !== 8) return false;
+    const nameLen = ram[0xb7];
+    const nameAddr = ram[0xbb] | (ram[0xbc] << 8);
+    const name = new Uint8Array(nameLen);
+    for (let i = 0; i < nameLen; i++) name[i] = this.read((nameAddr + i) & 0xffff);
+    const sa = ram[0xb9];
+    let data: Uint8Array | null = null;
+    let label = Array.from(name, (c) => String.fromCharCode(c)).join('');
+    if (nameLen >= 1 && name[0] === 0x24) {
+      data = buildDirectoryListing(this.disk);
+    } else {
+      // "0:NAME" drive prefix
+      let pat = name;
+      const colon = pat.indexOf(0x3a);
+      if (colon >= 0 && colon <= 1) pat = pat.subarray(colon + 1);
+      const file = this.disk.files.find((f) => f.data && (pat.length === 0 || matchName(pat, f.rawName)));
+      if (file) { data = file.data; label = file.name; }
+    }
+    // emulate RTS from the JSR $FFD5
+    const lo = this.read(0x100 | ((cpu.s + 1) & 0xff)), hi = this.read(0x100 | ((cpu.s + 2) & 0xff));
+    cpu.s = (cpu.s + 2) & 0xff;
+    cpu.pc = (((hi << 8) | lo) + 1) & 0xffff;
+    if (!data || data.length < 2) {
+      cpu.c = 1; cpu.a = 4; // FILE NOT FOUND
+      this.onDiskLoad?.(label, false);
+      return true;
+    }
+    let start = data[0] | (data[1] << 8);
+    if (sa === 0) start = cpu.x | (cpu.y << 8);
+    const body = data.subarray(2);
+    const len = Math.min(body.length, 0x10000 - start);
+    this.ram.set(body.subarray(0, len), start);
+    const end = start + len;
+    ram[0xae] = end & 0xff; ram[0xaf] = end >> 8;
+    ram[0x90] = 0x40; // EOF
+    cpu.x = end & 0xff; cpu.y = end >> 8; cpu.c = 0; cpu.a = 0;
+    this.onDiskLoad?.(label, true);
+    return true;
+  }
+}
+
+export function asciiToPetscii(ch: string): number {
+  const c = ch.charCodeAt(0);
+  if (ch === '\n') return 13;
+  if (c >= 0x61 && c <= 0x7a) return c - 0x20;      // a-z → unshifted letters
+  if (c >= 0x20 && c <= 0x5d) return c;             // space..] (incl. A-Z)
+  if (ch === '£') return 0x5c;
+  if (ch === '^' || ch === '↑') return 0x5e;
+  if (ch === '_' || ch === '←') return 0x5f;
+  if (ch === 'π') return 0xff;
+  return -1;
+}
