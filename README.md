@@ -1,4 +1,4 @@
-# AndroC64 — Breadbin 64
+# droidC64 — Breadbin 64
 
 Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 
@@ -14,7 +14,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository.
 
 ## Uso
-Versione online: https://mokkus68.github.io/AndroC64/
+Versione online: https://mokkus68.github.io/droidC64/ (l'indirizzo distingue maiuscole e minuscole: `droidc64` tutto minuscolo dà 404)
 
 Apri `docs/index.html` in un browser: è una pagina unica, autonoma.
 
