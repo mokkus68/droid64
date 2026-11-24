@@ -13,9 +13,11 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository.
 
 ## Uso
-Apri `dist/index.html` in un browser: è una pagina unica, autonoma.
+Versione online: https://mokkus68.github.io/AndroC64/
 
-Per ricompilare:
+Apri `docs/index.html` in un browser: è una pagina unica, autonoma.
+
+Per ricompilare (il risultato va in `docs/`, la cartella pubblicata da GitHub Pages):
 
 ```bash
 npm install
@@ -53,4 +55,4 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 
 ## Licenza
 Il codice dell'emulatore è distribuito con licenza [MIT](LICENSE).
-Le Open ROMs incluse in `src/roms.ts` (e quindi in `dist/index.html`) restano sotto la propria licenza LGPL-3.0.
+Le Open ROMs incluse in `src/roms.ts` (e quindi in `docs/index.html`) restano sotto la propria licenza LGPL-3.0.

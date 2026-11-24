@@ -27,4 +27,4 @@ Third-party component: src/roms.ts contains the MEGA65 Open ROMs binaries
 above. They are distributed under the GNU Lesser General Public License v3.0
 (Copyright Paul Gardner-Stephen, Roman Standzikowski and contributors; some
 BASIC parts MIT-licensed by Microsoft Corporation). The same applies to the
-copy of those ROMs embedded in dist/index.html.
+copy of those ROMs embedded in docs/index.html.
