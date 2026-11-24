@@ -12,7 +12,7 @@ const K: Record<string, Key> = {
   '1': [7, 0], '←': [7, 1], CTRL: [7, 2], '2': [7, 3], SPACE: [7, 4], CBM: [7, 5], Q: [7, 6], STOP: [7, 7],
 };
 
-type Shift = 'pass' | 'on' | 'off';
+export type Shift = 'pass' | 'on' | 'off';
 interface Mapping { keys: Key[]; shift: Shift; }
 const m = (k: string, shift: Shift = 'pass'): Mapping => ({ keys: [K[k]], shift });
 
@@ -71,6 +71,14 @@ export class KeyboardMapper {
     if (!known) return false;
     this.queue.push({ code: e.code, map: null });
     return true;
+  }
+  /** Press / release a C64 key from an on-screen button (`key` is a matrix key name such as SPACE or F1). */
+  virtualDown(id: string, key: string, shift: Shift = 'off') {
+    if (!K[key]) return;
+    this.queue.push({ code: 'v:' + id, map: m(key, shift) });
+  }
+  virtualUp(id: string) {
+    this.queue.push({ code: 'v:' + id, map: null });
   }
   releaseAll() { this.down.clear(); this.order = []; this.queue = []; }
 

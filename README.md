@@ -7,6 +7,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **VIC-II**: modalità testo, multicolore, ECM, bitmap, 8 sprite con collisioni, interrupt raster, apertura dei bordi superiore e inferiore (rendering per riga)
 - **SID**: 3 voci, forme d'onda, ADSR, filtro, ring modulation e sync
 - **2× CIA 6526**: timer, TOD, tastiera, joystick, interrupt
+- **Comandi touch**: joystick a schermo (8 direzioni, multitocco con il pulsante di fuoco) e tasti Spazio, Return, Run/Stop, F1–F7, Y, N; si attiva da solo sui telefoni
 - **Caricamento**: PRG, D64 e T64; `LOAD` da device 8 servito direttamente dall'immagine disco (senza emulare il 1541)
 
 ## ROM

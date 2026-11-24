@@ -136,11 +136,11 @@ function loop(now: number) {
 // ---------- input ----------
 const keyboard = new KeyboardMapper();
 let joyPort = Number(store.get('c64.joyport') ?? '2');
-let keyJoy = 0, padJoy = 0;
+let keyJoy = 0, padJoy = 0, touchJoy = 0;
 const screenWrap = $('screen-wrap');
 
 function applyJoy() {
-  const v = keyJoy | padJoy;
+  const v = keyJoy | padJoy | touchJoy;
   c64.joy1 = joyPort === 1 ? v : 0;
   c64.joy2 = joyPort === 2 ? v : 0;
 }
@@ -189,6 +189,91 @@ function setJoyPort(p: number) {
   keyJoy = 0; applyJoy();
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-joy]')) b.addEventListener('click', () => setJoyPort(Number(b.dataset.joy)));
+
+// ---------- on-screen joystick and keys ----------
+function setupTouchControls() {
+  const pad = $('touchpad');
+  const toggle = $('touch-toggle');
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  const saved = store.get('c64.touch');
+  const show = (on: boolean) => {
+    pad.hidden = !on;
+    toggle.setAttribute('aria-pressed', String(on));
+    store.set('c64.touch', on ? '1' : '0');
+  };
+  show(saved === null ? coarse : saved === '1');
+  if (coarse) document.querySelector('#screen-wrap .hint')!.textContent = "Tocca lo schermo per attivare l'audio";
+  toggle.addEventListener('click', () => show(pad.hidden));
+
+  const buzz = () => { try { navigator.vibrate?.(8); } catch { /* not supported */ } };
+  const ensurePort = () => { if (!joyPort) setJoyPort(2); };
+
+  // d-pad: direction from the touch position relative to the centre, 8 directions
+  const dpad = $('dpad'), knob = $('knob');
+  let dpadPointer = -1;
+  const setDir = (bits: number, kx = 0, ky = 0) => {
+    const changed = (touchJoy & 15) !== bits;
+    touchJoy = (touchJoy & 16) | bits;
+    knob.style.transform = `translate(${kx}px, ${ky}px)`;
+    dpad.dataset.dir = String(bits);
+    if (changed && bits) buzz();
+    applyJoy();
+  };
+  const track = (e: PointerEvent) => {
+    const r = dpad.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const dx = e.clientX - cx, dy = e.clientY - cy;
+    const radius = r.width / 2;
+    const dist = Math.hypot(dx, dy);
+    const k = Math.min(dist, radius * 0.45) / (dist || 1);
+    if (dist < radius * 0.18) { setDir(0, dx * k, dy * k); return; }
+    const sector = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)); // 0 = right, 2 = down, ±4 = left, -2 = up
+    const DIRS: Record<string, number> = { '0': 8, '1': 8 | 2, '2': 2, '3': 2 | 4, '4': 4, '-4': 4, '-3': 4 | 1, '-2': 1, '-1': 1 | 8 };
+    setDir(DIRS[String(sector)] ?? 0, dx * k, dy * k);
+  };
+  dpad.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    startAudio(); ensurePort();
+    dpadPointer = e.pointerId;
+    try { dpad.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    track(e);
+  });
+  dpad.addEventListener('pointermove', (e) => { if (e.pointerId === dpadPointer) track(e); });
+  const endDpad = (e: PointerEvent) => { if (e.pointerId !== dpadPointer) return; dpadPointer = -1; setDir(0); };
+  dpad.addEventListener('pointerup', endDpad);
+  dpad.addEventListener('pointercancel', endDpad);
+
+  // fire button
+  const fire = $('fire');
+  const fireOn = (on: boolean) => {
+    touchJoy = on ? touchJoy | 16 : touchJoy & ~16;
+    fire.dataset.down = on ? '1' : '0';
+    applyJoy();
+  };
+  fire.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); startAudio(); ensurePort(); buzz();
+    try { fire.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    fireOn(true);
+  });
+  fire.addEventListener('pointerup', () => fireOn(false));
+  fire.addEventListener('pointercancel', () => fireOn(false));
+
+  // C64 keys games commonly ask for
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-vkey]')) {
+    const id = b.dataset.vkey!;
+    let held = false;
+    const up = () => { if (!held) return; held = false; b.dataset.down = '0'; keyboard.virtualUp(id); };
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault(); startAudio(); buzz();
+      try { b.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      held = true; b.dataset.down = '1';
+      keyboard.virtualDown(id, b.dataset.vkey!, (b.dataset.shift as any) ?? 'off');
+    });
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+  }
+}
 
 // ---------- files ----------
 let disk: (DiskImage & { files: D64File[] }) | null = null;
@@ -336,7 +421,7 @@ $('turbo').addEventListener('click', () => {
 $('fullscreen').addEventListener('click', async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
-    else await screenWrap.requestFullscreen();
+    else await $('monitor').requestFullscreen();
   } catch { toast('Schermo intero non disponibile qui'); }
   screenWrap.focus();
 });
@@ -410,6 +495,7 @@ for (let i = 0; i < 16; i++) {
 }
 
 setJoyPort(joyPort);
+setupTouchControls();
 updateRomStatus();
 updateAudioStatus();
 for (let i = 0; i < 120; i++) c64.runFrame(); // boot straight to READY.

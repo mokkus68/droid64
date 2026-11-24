@@ -108,6 +108,40 @@ kbd { font: 500 11px/1 var(--font-mono); border: 1px solid var(--case-edge); bor
 #toast[data-show="1"] { opacity: 1; transform: translate(-50%, 0); }
 footer { color: var(--muted); font-size: 12px; }
 footer a { color: var(--beige); }
+/* on-screen joystick */
+.touchpad { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-top: 4px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.dpad { position: relative; width: 148px; height: 148px; border-radius: 50%; background: radial-gradient(circle at 50% 45%, #2b2723, #171512 70%); border: 1px solid var(--case-edge); touch-action: none; cursor: pointer; }
+.dpad .knob { position: absolute; left: 50%; top: 50%; width: 58px; height: 58px; margin: -29px 0 0 -29px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #3a3a3a, #0b0b0b 75%); box-shadow: 0 4px 10px rgba(0,0,0,.6); pointer-events: none; }
+.dpad .arrow { position: absolute; width: 0; height: 0; border: 7px solid transparent; opacity: .55; pointer-events: none; }
+.dpad .up { left: 50%; top: 10px; margin-left: -7px; border-bottom-color: var(--beige); border-top-width: 0; }
+.dpad .down { left: 50%; bottom: 10px; margin-left: -7px; border-top-color: var(--beige); border-bottom-width: 0; }
+.dpad .left { top: 50%; left: 10px; margin-top: -7px; border-right-color: var(--beige); border-left-width: 0; }
+.dpad .right { top: 50%; right: 10px; margin-top: -7px; border-left-color: var(--beige); border-right-width: 0; }
+.dpad[data-dir="1"] .up, .dpad[data-dir="9"] .up, .dpad[data-dir="5"] .up,
+.dpad[data-dir="2"] .down, .dpad[data-dir="10"] .down, .dpad[data-dir="6"] .down,
+.dpad[data-dir="4"] .left, .dpad[data-dir="5"] .left, .dpad[data-dir="6"] .left,
+.dpad[data-dir="8"] .right, .dpad[data-dir="9"] .right, .dpad[data-dir="10"] .right { opacity: 1; }
+.dpad[data-dir="1"] .up, .dpad[data-dir="9"] .up, .dpad[data-dir="5"] .up { border-bottom-color: var(--vic-blue); }
+.dpad[data-dir="2"] .down, .dpad[data-dir="10"] .down, .dpad[data-dir="6"] .down { border-top-color: var(--vic-blue); }
+.dpad[data-dir="4"] .left, .dpad[data-dir="5"] .left, .dpad[data-dir="6"] .left { border-right-color: var(--vic-blue); }
+.dpad[data-dir="8"] .right, .dpad[data-dir="9"] .right, .dpad[data-dir="10"] .right { border-left-color: var(--vic-blue); }
+.fire { width: 104px; height: 104px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, #e0554c, #8f231d 75%); border: 2px solid #5e1612; color: #fff; font: 400 13px/1 var(--font-display); letter-spacing: .05em; touch-action: none; box-shadow: 0 5px 0 #4a110e; }
+.fire[data-down="1"] { transform: translateY(4px); box-shadow: 0 1px 0 #4a110e; filter: brightness(1.15); }
+.vkeys { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; touch-action: manipulation; }
+.vkeys button { font: 500 12px/1 var(--font-mono); padding: 8px 9px; min-height: 36px; min-width: 40px; }
+.vkeys button[data-down="1"] { background: var(--vic-blue); border-color: var(--vic-blue); color: #fff; }
+@media (max-width: 520px) {
+  .touchpad { grid-template-columns: auto auto; justify-content: space-between; }
+  .vkeys { grid-column: 1 / -1; grid-row: 2; }
+}
+/* fullscreen: picture fills the screen, controls float over it */
+.monitor:fullscreen { background: #000; border: 0; border-radius: 0; padding: 0; display: grid; place-items: center; }
+.monitor:fullscreen .toolbar { display: none; }
+.monitor:fullscreen #screen-wrap { width: 100%; height: 100%; display: grid; place-items: center; }
+.monitor:fullscreen #screen { width: auto; height: 100vh; max-width: 100vw; object-fit: contain; }
+.monitor:fullscreen .touchpad { position: absolute; left: 0; right: 0; bottom: 0; padding: 16px max(16px, env(safe-area-inset-left, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)); grid-template-columns: auto minmax(0, 1fr) auto; pointer-events: none; }
+.monitor:fullscreen .touchpad > * { pointer-events: auto; opacity: .8; }
+.monitor:fullscreen .vkeys { align-self: end; grid-column: auto; grid-row: auto; }
 @media (prefers-reduced-motion: reduce) { #toast, .hint { transition: none; } }
 </style>
 
@@ -131,7 +165,7 @@ footer a { color: var(--beige); }
   </div>
 
   <div class="main">
-    <section class="monitor" aria-label="Schermo del C64">
+    <section class="monitor" id="monitor" aria-label="Schermo del C64">
       <div id="screen-wrap" tabindex="0" data-focus="0" data-paused="0" data-typing="0">
         <canvas id="screen" aria-label="Uscita video del C64"></canvas>
         <span class="hint">Clicca qui per usare tastiera e audio</span>
@@ -144,8 +178,28 @@ footer a { color: var(--beige); }
         <button type="button" id="pause" aria-pressed="false">Pausa</button>
         <button type="button" id="turbo" aria-pressed="false" title="Esegue alla massima velocità">Turbo</button>
         <button type="button" id="fullscreen">Schermo intero</button>
+        <button type="button" id="touch-toggle" aria-pressed="false" title="Mostra joystick e tasti a schermo">Joystick a schermo</button>
         <span class="spacer"></span>
         <label class="vol" for="volume">Volume <input id="volume" type="range" min="0" max="100" value="70"></label>
+      </div>
+      <div class="touchpad" id="touchpad" hidden>
+        <div class="dpad" id="dpad" role="img" aria-label="Joystick: trascina il dito nella direzione voluta" data-dir="0">
+          <span class="arrow up" aria-hidden="true"></span><span class="arrow right" aria-hidden="true"></span>
+          <span class="arrow down" aria-hidden="true"></span><span class="arrow left" aria-hidden="true"></span>
+          <span class="knob" id="knob" aria-hidden="true"></span>
+        </div>
+        <div class="vkeys" role="group" aria-label="Tasti del C64">
+          <button type="button" data-vkey="SPACE">Spazio</button>
+          <button type="button" data-vkey="RETURN">Return</button>
+          <button type="button" data-vkey="STOP">Run/Stop</button>
+          <button type="button" data-vkey="F1">F1</button>
+          <button type="button" data-vkey="F3">F3</button>
+          <button type="button" data-vkey="F5">F5</button>
+          <button type="button" data-vkey="F7">F7</button>
+          <button type="button" data-vkey="Y">Y</button>
+          <button type="button" data-vkey="N">N</button>
+        </div>
+        <button type="button" class="fire" id="fire" data-down="0" aria-label="Fuoco">FUOCO</button>
       </div>
     </section>
 
@@ -172,7 +226,7 @@ footer a { color: var(--beige); }
           <button type="button" data-joy="1" aria-pressed="false">Porta 1</button>
           <button type="button" data-joy="2" aria-pressed="true">Porta 2</button>
         </div>
-        <p>Frecce per muovere, <kbd>Ctrl</kbd> o <kbd>Alt</kbd> per sparare. Funziona anche un gamepad. Se un gioco non risponde, prova l'altra porta.</p>
+        <p>Frecce per muovere, <kbd>Ctrl</kbd> o <kbd>Alt</kbd> per sparare. Funziona anche un gamepad. Su telefono usa il joystick a schermo sotto l'immagine. Se un gioco non risponde, prova l'altra porta.</p>
       </section>
 
       <section class="panel" id="rom-status" data-original="0">
