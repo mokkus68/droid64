@@ -10,6 +10,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Comandi touch**: joystick a schermo (8 direzioni, multitocco con il pulsante di fuoco) e tasti Spazio, Return, Run/Stop, F1–F7, Y, N; si attiva da solo sui telefoni
 - **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone. Da computer lo schermo intero mostra solo lo schermo del C64, il più grande possibile
 - **Drive 8**: LED verde con disco inserito e LED rosso a ogni accesso; pulsanti per vedere la directory (`LOAD"$",8` + `LIST`) e per caricare e avviare il primo programma (`LOAD"*",8,1` + `RUN` o `SYS`)
+- **Cartucce .CRT**: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
 - **Caricamento**: PRG, D64 e T64; `LOAD` da device 8 servito direttamente dall'immagine disco (senza emulare il 1541)
 
 ## ROM
@@ -36,6 +37,7 @@ npm run build
 | `src/cia.ts` | CIA 6526 |
 | `src/c64.ts` | mappa di memoria, collegamento dei chip, loop del frame, caricamento |
 | `src/media.ts` | lettura di D64/T64 |
+| `src/cartridge.ts` | cartucce .CRT e cambio di banco |
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
 | `src/vkbd.ts` | tastiera C64 a schermo |
 | `src/main.ts` | interfaccia, audio, input |
@@ -55,7 +57,7 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 ## Limiti noti
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
 - Nessuna emulazione del drive 1541: i fastloader e i multiload che non usano il `LOAD` del KERNAL non funzionano
-- Cartucce `.CRT` non supportate
+- Cartucce `.CRT`: non sono supportati i tipi con freezer o hardware speciale (Action Replay, Final Cartridge III, Retro Replay…)
 
 ## Licenza
 Il codice dell'emulatore è distribuito con licenza [MIT](LICENSE).

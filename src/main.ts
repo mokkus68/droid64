@@ -5,6 +5,7 @@ import { parseD64, parseT64, D64File, DiskImage } from './media';
 import { OPEN_BASIC, OPEN_KERNAL, OPEN_CHARGEN } from './roms';
 import { DEMO } from './demo';
 import { buildKeyboard } from './vkbd';
+import { Cartridge } from './cartridge';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -62,6 +63,7 @@ function rebuildMachine() {
   c64 = new C64(romInfo.roms, audio ? audio.ctx.sampleRate : 44100);
   if (disk) c64.mountDisk(disk);
   c64.onDiskLoad = onDiskLoad;
+  if (cartridge) c64.insertCartridge(cartridge);
   updateRomStatus();
 }
 
@@ -331,9 +333,27 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('.js-dir')) b.addEv
 for (const b of document.querySelectorAll<HTMLButtonElement>('.js-run')) b.addEventListener('click', runFirstProgram);
 c64.onDiskLoad = onDiskLoad;
 
+// ---------- cartridge ----------
+let cartridge: Cartridge | null = null;
+function showCartridge() {
+  cartridge = c64.cart;
+  const box = $('cartridge');
+  box.hidden = !cartridge;
+  if (!cartridge) return;
+  $('cart-name').textContent = cartridge.name;
+  $('cart-type').textContent = cartridge.typeName;
+}
+$('cart-remove').addEventListener('click', () => {
+  c64.insertCartridge(null);
+  if (disk) c64.mountDisk(disk);
+  showCartridge();
+  toast('Cartuccia rimossa: il C64 è stato riavviato');
+  screenWrap.focus();
+});
+
 async function handleFiles(files: FileList | File[]) {
   const list = Array.from(files);
-  const roms = list.filter((f) => /\.(bin|rom)$/i.test(f.name) || f.size === 4096 || (f.size === 8192 && !/\.(prg|d64|t64)$/i.test(f.name)));
+  const roms = list.filter((f) => /\.(bin|rom)$/i.test(f.name) || f.size === 4096 || (f.size === 8192 && !/\.(prg|d64|t64|crt)$/i.test(f.name)));
   if (roms.length) { await loadRoms(roms); }
   const progs = list.filter((f) => !roms.includes(f));
   if (!progs.length) return;
@@ -341,7 +361,14 @@ async function handleFiles(files: FileList | File[]) {
   const data = new Uint8Array(await f.arrayBuffer());
   const name = f.name.toLowerCase();
   try {
-    if (name.endsWith('.d64') || data.length === 174848 || data.length === 175531 || data.length === 196608) {
+    if (name.endsWith('.crt') || String.fromCharCode(...data.subarray(0, 13)) === 'C64 CARTRIDGE') {
+      const cart = new Cartridge(data);
+      startAudio();
+      c64.insertCartridge(cart);
+      if (disk) c64.mountDisk(disk);
+      showCartridge();
+      toast(`Cartuccia inserita: ${cart.name}`);
+    } else if (name.endsWith('.d64') || data.length === 174848 || data.length === 175531 || data.length === 196608) {
       disk = parseD64(data);
       c64.mountDisk(disk);
       showDirectory(f.name);

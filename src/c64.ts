@@ -5,8 +5,11 @@ import { VIC, CYCLES_PER_LINE, LINES_PER_FRAME } from './vic';
 import { SID } from './sid';
 import { CIA } from './cia';
 import { D64File, DiskImage, matchName, buildDirectoryListing } from './media';
+import { Cartridge } from './cartridge';
 
 export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
+
+const M_RAM = 0, M_BASIC = 1, M_KERNAL = 2, M_IO = 3, M_CHAR = 4, M_ROML = 5, M_ROMH = 6, M_OPEN = 7;
 
 export const JOY_UP = 1, JOY_DOWN = 2, JOY_LEFT = 4, JOY_RIGHT = 8, JOY_FIRE = 16;
 export const CLOCK_HZ = 985248;
@@ -28,7 +31,10 @@ export class C64 implements Bus {
 
   // processor port
   private portDdr = 0x2f; private portData = 0x37;
-  private basicIn = true; private kernalIn = true; private ioIn = true; private charIn = false;
+  // memory map: what the CPU sees in each 4K page
+  private map = new Uint8Array(16);
+  private ultimax = false;
+  cart: Cartridge | null = null;
   private vicBank = 0;
   private cycleBudget = 0;
   frameCount = 0;
@@ -44,7 +50,10 @@ export class C64 implements Bus {
     this.vic = new VIC({
       vicRead: (a: number) => {
         a &= 0x3fff;
-        if ((this.vicBank & 1) === 0 && (a & 0x3000) === 0x1000) return this.roms.chargen[a & 0xfff];
+        if (this.ultimax) {
+          // in Ultimax mode the VIC sees the cartridge ROMH at $3000-$3FFF of every bank
+          if ((a & 0x3000) === 0x3000 && this.cart) return this.cart.readRomh(a | 0x1000);
+        } else if ((this.vicBank & 1) === 0 && (a & 0x3000) === 0x1000) return this.roms.chargen[a & 0xfff];
         return this.ram[(this.vicBank << 14) | a];
       },
       colorRam: this.colorRam,
@@ -83,6 +92,7 @@ export class C64 implements Bus {
     // RAM power-up pattern
     for (let i = 0; i < 65536; i++) this.ram[i] = (i & 0x40) ? 0xff : 0x00;
     this.colorRam.fill(0);
+    this.cart?.reset();
     this.portDdr = 0x2f; this.portData = 0x37; this.updatePort();
     this.cia1.reset(); this.cia2.reset();
     this.vicBank = 0;
@@ -94,29 +104,46 @@ export class C64 implements Bus {
     this.frameCount = 0;
   }
 
+  /** Rebuild the CPU memory map from the processor port and the cartridge EXROM/GAME lines (PLA logic). */
   private updatePort() {
     const bits = (this.portData | ~this.portDdr) & 7;
     const lo = bits & 1, hi = bits & 2, ch = bits & 4;
-    this.basicIn = !!(lo && hi);
-    this.kernalIn = !!hi;
-    this.ioIn = !!((lo || hi) && ch);
-    this.charIn = !!((lo || hi) && !ch);
+    const exrom = this.cart ? this.cart.exrom : 1;
+    const game = this.cart ? this.cart.game : 1;
+    const m = this.map;
+    m.fill(M_RAM);
+    this.ultimax = game === 0 && exrom === 1;
+    if (this.ultimax) {
+      for (let p = 1; p < 16; p++) m[p] = M_OPEN;
+      m[0x8] = m[0x9] = M_ROML;
+      m[0xd] = M_IO;
+      m[0xe] = m[0xf] = M_ROMH;
+      return;
+    }
+    if (lo && hi) {
+      if (exrom === 0) { m[0x8] = m[0x9] = M_ROML; }
+      if (exrom === 0 && game === 0) { m[0xa] = m[0xb] = M_ROMH; }
+      else { m[0xa] = m[0xb] = M_BASIC; }
+    } else if (hi && exrom === 0 && game === 0) {
+      m[0xa] = m[0xb] = M_ROMH;
+    }
+    if (hi) m[0xe] = m[0xf] = M_KERNAL;
+    if (lo || hi) m[0xd] = ch ? M_IO : M_CHAR;
   }
 
+  get kernalIn() { return this.map[0xf] === M_KERNAL; }
+
   read(addr: number): number {
-    if (addr < 0xa000) {
-      if (addr > 1) return this.ram[addr];
-      if (addr === 0) return this.portDdr;
-      return (this.portData & this.portDdr) | (~this.portDdr & 0x17);
-    }
-    switch (addr >> 12) {
-      case 0xa: case 0xb: return this.basicIn ? this.roms.basic[addr & 0x1fff] : this.ram[addr];
-      case 0xc: return this.ram[addr];
-      case 0xd:
-        if (this.ioIn) return this.ioRead(addr);
-        if (this.charIn) return this.roms.chargen[addr & 0xfff];
-        return this.ram[addr];
-      default: return this.kernalIn ? this.roms.kernal[addr & 0x1fff] : this.ram[addr];
+    if (addr < 2) return addr === 0 ? this.portDdr : (this.portData & this.portDdr) | (~this.portDdr & 0x17);
+    switch (this.map[addr >> 12]) {
+      case M_RAM: return this.ram[addr];
+      case M_BASIC: return this.roms.basic[addr & 0x1fff];
+      case M_KERNAL: return this.roms.kernal[addr & 0x1fff];
+      case M_IO: return this.ioRead(addr);
+      case M_CHAR: return this.roms.chargen[addr & 0xfff];
+      case M_ROML: return this.cart!.readRoml(addr);
+      case M_ROMH: return this.cart!.readRomh(addr);
+      default: return 0xff; // Ultimax: unmapped
     }
   }
 
@@ -127,8 +154,17 @@ export class C64 implements Bus {
       this.updatePort();
       return;
     }
-    if ((addr >> 12) === 0xd && this.ioIn) { this.ioWrite(addr, v); return; }
+    const t = this.map[addr >> 12];
+    if (t === M_IO) { this.ioWrite(addr, v); return; }
+    if (this.ultimax && t !== M_RAM) return; // cartridge ROM / open bus in Ultimax mode
     this.ram[addr] = v;
+  }
+
+  /** Insert (or remove with null) a cartridge; the machine is reset. */
+  insertCartridge(cart: Cartridge | null) {
+    this.cart = cart;
+    if (cart) cart.onLinesChanged = () => this.updatePort();
+    this.reset();
   }
 
   private ioRead(addr: number): number {
@@ -138,7 +174,8 @@ export class C64 implements Bus {
       case 8: case 9: case 0xa: case 0xb: return (this.colorRam[addr & 0x3ff] & 0x0f) | 0xf0;
       case 0xc: return this.cia1.read(addr);
       case 0xd: return this.cia2.read(addr);
-      default: return 0xff;
+      case 0xe: return this.cart ? this.cart.io1Read(addr) : 0xff;
+      default: return this.cart ? this.cart.io2Read(addr) : 0xff;
     }
   }
 
@@ -149,6 +186,8 @@ export class C64 implements Bus {
       case 8: case 9: case 0xa: case 0xb: this.colorRam[addr & 0x3ff] = v & 0x0f; break;
       case 0xc: this.cia1.write(addr, v); break;
       case 0xd: this.cia2.write(addr, v); break;
+      case 0xe: this.cart?.io1Write(addr, v); break;
+      case 0xf: this.cart?.io2Write(addr, v); break;
     }
   }
 

@@ -152,6 +152,13 @@ body.fs-open { overflow: hidden; }
 .monitor.fs[data-fsmode="kbd"] #touchpad { display: none !important; }
 .monitor.fs[data-fsmode="joy"] #touchpad, .monitor.fs[data-fsmode="joy"] #touchpad[hidden] { display: grid !important; flex: 1 1 auto; align-content: center; }
 
+/* inserted cartridge */
+.cart { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border: 1px solid var(--case-edge); border-radius: var(--r); padding: 10px; background: #1f1c19; }
+.cart-label { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cart-slot { width: 26px; height: 34px; border-radius: 3px 3px 1px 1px; background: linear-gradient(#3a3a3a, #1c1c1c); border-top: 4px solid #8a8a8a; flex: 0 0 auto; }
+#cart-name { font-family: var(--font-mono); font-size: 13px; color: var(--beige); overflow-wrap: anywhere; }
+#cart-type { color: var(--muted); font-size: 12px; }
+
 /* drive 8: green power LED when a disk is inserted, red activity LED while it is read */
 .drive-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .drive { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; height: 32px; border-radius: 4px; background: #d9cfba; border: 1px solid #9c917b; color: #3a3128; font: 600 11px/1 var(--font-mono); }
@@ -289,10 +296,14 @@ body.fs-open { overflow: hidden; }
       <section class="panel">
         <h2>Programmi</h2>
         <div class="drop">
-          <button type="button" class="primary" id="pick">Apri PRG, D64 o T64</button>
+          <button type="button" class="primary" id="pick">Apri PRG, D64, T64 o CRT</button>
           <small>oppure trascina il file sulla pagina</small>
         </div>
-        <input type="file" id="file" accept=".prg,.d64,.t64,.p00,.bin,.rom" multiple hidden>
+        <input type="file" id="file" accept=".prg,.d64,.t64,.crt,.p00,.bin,.rom" multiple hidden>
+        <div id="cartridge" class="cart" hidden>
+          <div class="cart-label"><span class="cart-slot" aria-hidden="true"></span><div><div id="cart-name"></div><small id="cart-type"></small></div></div>
+          <button type="button" id="cart-remove">Rimuovi cartuccia</button>
+        </div>
         <div id="directory" hidden>
           <div id="dir-title"></div>
           <ul id="dir-list"></ul>
@@ -351,7 +362,7 @@ body.fs-open { overflow: hidden; }
       </section>
     </aside>
   </div>
-  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). I caricamenti multipli da disco funzionano solo per i giochi che usano il LOAD del KERNAL.</footer>
+  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). I caricamenti multipli da disco funzionano solo per i giochi che usano il LOAD del KERNAL. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>
