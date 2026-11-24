@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Emulatore Commodore 64 in TypeScript per il browser",
+  "license": "MIT",
   "scripts": {
     "build": "node build.mjs",
     "typecheck": "tsc --noEmit --strict --target es2020 --lib es2020,dom,dom.iterable src/main.ts"

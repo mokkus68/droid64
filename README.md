@@ -50,3 +50,7 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
 - Nessuna emulazione del drive 1541: i fastloader e i multiload che non usano il `LOAD` del KERNAL non funzionano
 - Cartucce `.CRT` non supportate
+
+## Licenza
+Il codice dell'emulatore è distribuito con licenza [MIT](LICENSE).
+Le Open ROMs incluse in `src/roms.ts` (e quindi in `dist/index.html`) restano sotto la propria licenza LGPL-3.0.
