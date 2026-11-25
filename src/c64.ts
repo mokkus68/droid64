@@ -7,6 +7,7 @@ import { CIA } from './cia';
 import { D64File, DiskImage, matchName, buildDirectoryListing } from './media';
 import { Cartridge } from './cartridge';
 import { VirtualDrive } from './vdrive';
+import { Drive1541 } from './drive1541';
 
 export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
 
@@ -81,6 +82,10 @@ export class C64 implements Bus {
     // CIA2: VIC bank + serial bus (no devices attached: lines read back as released)
     this.cia2.readPortA = (c) => {
       const out = (c.pra | ~c.ddra) & 0xff;
+      if (this.drive) {
+        const l = this.drive.lines();
+        return (out & 0x3f) | (l.clk ? 0 : 0x40) | (l.data ? 0 : 0x80);
+      }
       const clkIn = out & 0x10 ? 0 : 0x40;
       const dataIn = out & 0x20 ? 0 : 0x80;
       return (out & 0x3f) | clkIn | dataIn;
@@ -96,6 +101,7 @@ export class C64 implements Bus {
     this.colorRam.fill(0);
     this.cart?.reset();
     this.vdrive?.reset();
+    if (this.drive) { this.drive.reset(); this.drive.resetClock(this.now); }
     this.portDdr = 0x2f; this.portData = 0x37; this.updatePort();
     this.cia1.reset(); this.cia2.reset();
     this.vicBank = 0;
@@ -176,7 +182,9 @@ export class C64 implements Bus {
       case 4: case 5: case 6: case 7: return this.sid.read(addr);
       case 8: case 9: case 0xa: case 0xb: return (this.colorRam[addr & 0x3ff] & 0x0f) | 0xf0;
       case 0xc: return this.cia1.read(addr);
-      case 0xd: return this.cia2.read(addr);
+      case 0xd:
+        if (this.drive && (addr & 0xf) === 0) this.drive.runUntil(this.instrStart + 3);
+        return this.cia2.read(addr);
       case 0xe: return this.cart ? this.cart.io1Read(addr) : 0xff;
       default: return this.cart ? this.cart.io2Read(addr) : 0xff;
     }
@@ -188,7 +196,16 @@ export class C64 implements Bus {
       case 4: case 5: case 6: case 7: this.sid.write(addr, v); break;
       case 8: case 9: case 0xa: case 0xb: this.colorRam[addr & 0x3ff] = v & 0x0f; break;
       case 0xc: this.cia1.write(addr, v); break;
-      case 0xd: this.cia2.write(addr, v); break;
+      case 0xd: {
+        const r = addr & 0xf;
+        if (this.drive && (r === 0 || r === 2)) {
+          this.drive.runUntil(this.instrStart + 3);
+          const atn = this.iecLines().atn;
+          this.cia2.write(addr, v);
+          if (this.iecLines().atn !== atn) this.drive.atnChanged();
+        } else this.cia2.write(addr, v);
+        break;
+      }
       case 0xe: this.cart?.io1Write(addr, v); break;
       case 0xf: this.cart?.io2Write(addr, v); break;
     }
@@ -201,10 +218,15 @@ export class C64 implements Bus {
       const stolen = vic.startLine();
       if (stolen) { cia1.clock(stolen); cia2.clock(stolen); }
       this.cycleBudget += CYCLES_PER_LINE - stolen;
+      this.now += stolen;
+      const drive = this.drive;
       while (this.cycleBudget > 0) {
+        this.instrStart = this.now;
         const c = cpu.step();
         this.cycleBudget -= c;
+        this.now += c;
         cia1.clock(c); cia2.clock(c);
+        if (drive) drive.runUntil(this.now);
       }
       sid.clock(CYCLES_PER_LINE);
       vic.endLine();
@@ -269,8 +291,41 @@ export class C64 implements Bus {
   /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
   serialTrapsActive = false;
 
-  mountDisk(disk: (DiskImage & { files: D64File[] }) | null, image: Uint8Array | null = null) {
-    if (disk && this.disk === disk && this.vdrive) { this.cpu.trap = (cpu) => this.kernalTrap(cpu); return; }
+  // ---------- real 1541 emulation ----------
+  drive: Drive1541 | null = null;
+  private now = 0;          // C64 cycles since power-on, including cycles stolen by the VIC
+  private instrStart = 0;   // C64 time at the start of the current instruction
+  private diskImage: Uint8Array | null = null;
+
+  /** C64 outputs on the serial bus (true = line pulled low). */
+  iecLines() {
+    const c = this.cia2, o = c.pra & c.ddra;
+    return { atn: (o & 0x08) !== 0, clk: (o & 0x10) !== 0, data: (o & 0x20) !== 0 };
+  }
+
+  /** Attach a fully emulated 1541 (pass its 16K DOS ROM) or go back to the fast virtual drive (null). */
+  attachDrive(rom: Uint8Array | null) {
+    if (rom) {
+      const d = new Drive1541(rom);
+      d.c64Lines = () => this.iecLines();
+      d.resetClock(this.now);
+      d.insertDisk(this.diskImage);
+      this.drive = d;
+    } else this.drive = null;
+    this.mountDisk(this.disk, this.diskImage, true);
+  }
+
+  mountDisk(disk: (DiskImage & { files: D64File[] }) | null, image: Uint8Array | null = null, force = false) {
+    if (this.drive) {
+      // the emulated drive reads the disk itself: no KERNAL traps
+      if (force || image !== this.diskImage) this.drive.insertDisk(image);
+      this.disk = disk; this.diskImage = image;
+      this.vdrive = null;
+      this.cpu.trap = null;
+      return;
+    }
+    this.diskImage = image;
+    if (!force && disk && this.disk === disk && this.vdrive) { this.cpu.trap = (cpu) => this.kernalTrap(cpu); return; }
     this.disk = disk;
     this.vdrive = disk ? new VirtualDrive(disk, image) : null;
     if (this.vdrive) {

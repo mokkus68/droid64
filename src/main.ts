@@ -17,7 +17,7 @@ const store = {
 };
 
 // ---------- ROMs ----------
-interface UserRoms { basic?: string; kernal?: string; chargen?: string; }
+interface UserRoms { basic?: string; kernal?: string; chargen?: string; dos1541?: string; }
 let userRoms: UserRoms = {};
 try { userRoms = JSON.parse(store.get('c64.roms') || '{}'); } catch { userRoms = {}; }
 
@@ -35,6 +35,10 @@ function currentRoms(): { roms: Roms; original: boolean } {
 
 function identifyRom(d: Uint8Array): keyof UserRoms | null {
   if (d.length === 4096) return 'chargen';
+  if (d.length === 16384) {
+    const reset = d[0x3ffc] | (d[0x3ffd] << 8);
+    return reset >= 0xc000 ? 'dos1541' : null;
+  }
   if (d.length !== 8192) return null;
   const vec = (o: number) => d[o] | (d[o + 1] << 8);
   const isKernal = [0x1ffa, 0x1ffc, 0x1ffe].every((o) => vec(o) >= 0xe000);
@@ -64,6 +68,24 @@ function rebuildMachine() {
   if (disk) c64.mountDisk(disk, diskImage);
   wireMachine();
   if (cartridge) c64.insertCartridge(cartridge);
+  applyDriveMode();
+  updateRomStatus();
+}
+
+// ---------- drive 8: fast virtual drive or fully emulated 1541 ----------
+let trueDrive = store.get('c64.truedrive') !== '0';
+let autoTurbo = store.get('c64.autoturbo') !== '0';
+function applyDriveMode() {
+  const on = trueDrive && !!userRoms.dos1541;
+  if (on === !!c64.drive) return;
+  c64.attachDrive(on ? b64ToBytes(userRoms.dos1541!) : null);
+  c64.reset();
+  if (disk) c64.mountDisk(disk, diskImage);
+}
+function setTrueDrive(on: boolean) {
+  trueDrive = on;
+  store.set('c64.truedrive', on ? '1' : '0');
+  applyDriveMode();
   updateRomStatus();
 }
 
@@ -80,7 +102,7 @@ function startAudio() {
     gain.gain.value = volume;
     node.onaudioprocess = (ev) => {
       const out = ev.outputBuffer.getChannelData(0);
-      if (paused || turbo) { out.fill(0); return; }
+      if (paused || warping) { out.fill(0); return; }
       c64.sid.pull(out);
     };
     node.connect(gain); gain.connect(ctxA.destination);
@@ -98,7 +120,7 @@ function updateAudioStatus() {
 }
 
 // ---------- main loop ----------
-let paused = false, turbo = false;
+let paused = false, turbo = false, warping = false;
 let lastTime = performance.now(), acc = 0;
 const frameMs = 1000 / FRAME_HZ;
 
@@ -114,7 +136,10 @@ function loop(now: number) {
   lastTime = now;
   if (!paused) {
     pollGamepad();
-    if (turbo) {
+    // with the emulated 1541, run flat out while the drive motor spins (loading at real speed is slow)
+    warping = turbo || (autoTurbo && !!c64.drive && c64.drive.motor);
+    screenWrap.dataset.warp = warping && !turbo ? '1' : '0';
+    if (warping) {
       const t0 = performance.now();
       let n = 0;
       while (performance.now() - t0 < 14 && n < 40) { step(); n++; }
@@ -287,7 +312,7 @@ let driveBusyUntil = 0;
 let autoRunNext = false;
 function flashDrive(ms = 900) { driveBusyUntil = performance.now() + ms; }
 function updateDrive() {
-  const busy = performance.now() < driveBusyUntil;
+  const busy = performance.now() < driveBusyUntil || !!c64.drive?.led;
   for (const el of document.querySelectorAll<HTMLElement>('.drive')) {
     el.dataset.disk = disk ? '1' : '0';
     el.dataset.busy = busy ? '1' : '0';
@@ -335,15 +360,22 @@ function runFirstProgram() {
   for (let i = 0; i < 160; i++) c64.runFrame(); // boot to READY.
   c64.sid.readPos = c64.sid.writePos;
   c64.mountDisk(disk, diskImage);
-  autoRunNext = true;
   flashDrive(400);
-  c64.typeText('LOAD"*",8,1\n');
+  if (c64.drive) {
+    // real drive: no LOAD hook, so queue RUN/SYS from the address stored in the file
+    const start = first.data!.length >= 2 ? first.data![0] | (first.data![1] << 8) : 0x0801;
+    c64.typeText('LOAD"*",8,1\n' + (start === 0x0801 ? 'RUN\n' : `SYS${start}\n`));
+  } else {
+    autoRunNext = true;
+    c64.typeText('LOAD"*",8,1\n');
+  }
   toast(`Carico il primo programma: "${first.name}"`);
   screenWrap.focus();
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>('.js-dir')) b.addEventListener('click', showDiskDirectory);
 for (const b of document.querySelectorAll<HTMLButtonElement>('.js-run')) b.addEventListener('click', runFirstProgram);
 wireMachine();
+applyDriveMode();
 
 // ---------- cartridge ----------
 let cartridge: Cartridge | null = null;
@@ -365,7 +397,7 @@ $('cart-remove').addEventListener('click', () => {
 
 async function handleFiles(files: FileList | File[]) {
   const list = Array.from(files);
-  const roms = list.filter((f) => /\.(bin|rom)$/i.test(f.name) || f.size === 4096 || (f.size === 8192 && !/\.(prg|d64|t64|crt)$/i.test(f.name)));
+  const roms = list.filter((f) => /\.(bin|rom)$/i.test(f.name) || f.size === 4096 || ((f.size === 8192 || f.size === 16384) && !/\.(prg|d64|t64|crt)$/i.test(f.name)));
   if (roms.length) { await loadRoms(roms); }
   const progs = list.filter((f) => !roms.includes(f));
   if (!progs.length) return;
@@ -460,12 +492,17 @@ async function loadRoms(files: File[]) {
   for (const f of files) {
     const d = new Uint8Array(await f.arrayBuffer());
     const kind = identifyRom(d);
-    if (!kind) { toast(`${f.name} non sembra una ROM C64 (servono file da 8 KB o 4 KB)`); continue; }
+    if (!kind) { toast(`${f.name} non sembra una ROM C64 o 1541 (servono file da 8 KB, 4 KB o 16 KB)`); continue; }
     userRoms[kind] = bytesToB64(d);
     found.push(kind.toUpperCase());
   }
   if (!found.length) return;
   store.set('c64.roms', JSON.stringify(userRoms));
+  if (found.length === 1 && found[0] === 'DOS1541') {
+    setTrueDrive(true);
+    toast('ROM del 1541 caricata: il drive 8 ora è un 1541 emulato. Il C64 è stato riavviato.');
+    return;
+  }
   if (userRoms.basic && userRoms.kernal) {
     rebuildMachine();
     toast(`ROM originali caricate (${found.join(', ')}). Il C64 è stato riavviato.`);
@@ -489,10 +526,28 @@ function updateRomStatus() {
   $('rom-note').textContent = romInfo.original
     ? 'BASIC V2 e KERNAL completi.'
     : 'Il BASIC libero non ha numeri decimali, FOR, POKE e PEEK. Carica le tue ROM per il BASIC completo.';
-  for (const k of ['basic', 'kernal', 'chargen'] as const) $('rom-' + k).dataset.state = have(k);
+  for (const k of ['basic', 'kernal', 'chargen', 'dos1541'] as const) $('rom-' + k).dataset.state = have(k);
+  const real = !!c64.drive;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-drivemode]')) {
+    b.setAttribute('aria-pressed', String((b.dataset.drivemode === 'real') === real));
+    if (b.dataset.drivemode === 'real') b.disabled = !userRoms.dos1541;
+  }
+  $('drive-note').textContent = real
+    ? '1541 emulato: il drive esegue il suo DOS e legge il disco come un drive vero. Funzionano anche i fastloader, ma il caricamento normale ha la velocità reale (circa 400 byte al secondo).'
+    : userRoms.dos1541
+      ? 'Drive virtuale: carica all\'istante, ma non supporta i fastloader.'
+      : 'Drive virtuale: carica all\'istante, ma non supporta i fastloader. Per il 1541 emulato carica la ROM del drive (file da 16 KB, nella cartella DRIVES di VICE).';
   $('reset-rom').hidden = !(userRoms.basic || userRoms.kernal || userRoms.chargen);
   $('rom-banner').hidden = romInfo.original;
 }
+
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-drivemode]')) b.addEventListener('click', () => {
+  setTrueDrive(b.dataset.drivemode === 'real');
+  toast(c64.drive ? '1541 emulato attivo: il C64 è stato riavviato' : 'Drive virtuale attivo: il C64 è stato riavviato');
+});
+const autoTurboBox = $<HTMLInputElement>('autoturbo');
+autoTurboBox.checked = autoTurbo;
+autoTurboBox.addEventListener('change', () => { autoTurbo = autoTurboBox.checked; store.set('c64.autoturbo', autoTurbo ? '1' : '0'); });
 
 // ---------- controls ----------
 $('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk, diskImage); toast('Reset'); screenWrap.focus(); });

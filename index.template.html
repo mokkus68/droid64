@@ -79,6 +79,11 @@ body[data-drag="1"] .drop { border-color: var(--vic-blue); background: rgba(112,
 .drop small { color: var(--muted); font-size: 12px; }
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .seg button { padding: 8px 6px; }
+.seg2 { grid-template-columns: repeat(2, 1fr); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--beige); cursor: pointer; }
+.check input { accent-color: var(--vic-blue); width: 16px; height: 16px; }
+.warp-badge { position: absolute; top: 12px; right: 12px; font-family: var(--font-mono); font-size: 11px; background: #c8423b; color: #fff; padding: 2px 8px; border-radius: 3px; display: none; }
+#screen-wrap[data-warp="1"] .warp-badge { display: block; }
 
 #directory { display: grid; gap: 8px; }
 #dir-title { font-family: var(--font-mono); font-size: 12px; color: var(--beige); overflow-wrap: anywhere; }
@@ -237,6 +242,7 @@ body.fs-open { overflow: hidden; }
         <canvas id="screen" aria-label="Uscita video del C64"></canvas>
         <span class="hint">Clicca qui per usare tastiera e audio</span>
         <span class="paused-badge">PAUSA</span>
+        <span class="warp-badge">caricamento · turbo</span>
         <span class="typing-badge">digitazione…</span>
         <span class="fs-overlay" aria-hidden="false">
           <span class="drive" data-disk="0" data-busy="0" title="Drive 8"><span class="pwr" aria-hidden="true"></span><span class="act" aria-hidden="true"></span><span class="lbl">8</span></span>
@@ -330,13 +336,24 @@ body.fs-open { overflow: hidden; }
           <span class="chip" id="rom-basic" data-state="no">BASIC 8K</span>
           <span class="chip" id="rom-kernal" data-state="no">KERNAL 8K</span>
           <span class="chip" id="rom-chargen" data-state="no">CHARGEN 4K</span>
+          <span class="chip" id="rom-dos1541" data-state="no">1541 16K</span>
         </div>
         <div class="row">
           <button type="button" id="pick-rom">Carica ROM…</button>
           <button type="button" id="reset-rom" hidden>Usa ROM libere</button>
         </div>
         <input type="file" id="romfile" accept=".bin,.rom,*" multiple hidden>
-        <p>Seleziona insieme i file di basic, kernal e chargen: il tipo viene riconosciuto da solo. Restano salvati solo in questo browser.</p>
+        <p>Seleziona insieme i file di basic, kernal e chargen (e, se vuoi, la ROM del 1541): il tipo viene riconosciuto da solo. Restano salvati solo in questo browser.</p>
+      </section>
+
+      <section class="panel">
+        <h2>Drive 8</h2>
+        <div class="seg seg2" role="group" aria-label="Tipo di drive">
+          <button type="button" data-drivemode="virtual" aria-pressed="true">Virtuale veloce</button>
+          <button type="button" data-drivemode="real" aria-pressed="false" disabled>1541 emulato</button>
+        </div>
+        <p id="drive-note"></p>
+        <label class="check" for="autoturbo"><input type="checkbox" id="autoturbo" checked> Turbo automatico mentre il drive gira</label>
       </section>
 
       <section class="panel">
@@ -362,7 +379,7 @@ body.fs-open { overflow: hidden; }
       </section>
     </aside>
   </div>
-  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Il drive 8 è virtuale: funzionano i caricamenti che passano dal KERNAL (LOAD, OPEN, GET#), non i fastloader che usano codice proprio nel drive. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
+  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>

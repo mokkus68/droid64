@@ -11,11 +11,12 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone. Da computer lo schermo intero mostra solo lo schermo del C64, il più grande possibile
 - **Drive 8**: LED verde con disco inserito e LED rosso a ogni accesso; pulsanti per vedere la directory (`LOAD"$",8` + `LIST`) e per caricare e avviare il primo programma (`LOAD"*",8,1` + `RUN` o `SYS`)
 - **Cartucce .CRT**: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
-- **Drive virtuale 1541 (device 8)**: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
+- **1541 emulato** (con la ROM del drive caricata dall'utente): processore 6502 del drive, 2 KB di RAM, due VIA 6522, motore e testina, disco convertito in GCR con le zone di velocità reali, bus seriale ATN/CLK/DATA. C64 e drive avanzano insieme con precisione al ciclo, quindi funzionano anche i fastloader. Turbo automatico mentre il drive gira
+- **Drive virtuale veloce (device 8)**, in alternativa: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
 - **Caricamento**: PRG, D64 e T64
 
 ## ROM
-Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository.
+Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository. Per il 1541 emulato serve anche la ROM del drive (16 KB, per esempio `dos1541-325302-01+901229-05.bin` nella cartella `DRIVES` di VICE).
 
 ## Uso
 Versione online: https://mokkus68.github.io/droid64/
@@ -38,7 +39,10 @@ npm run build
 | `src/cia.ts` | CIA 6526 |
 | `src/c64.ts` | mappa di memoria, collegamento dei chip, loop del frame, caricamento |
 | `src/media.ts` | lettura di D64/T64 |
-| `src/vdrive.ts` | drive virtuale 1541 sul bus seriale |
+| `src/vdrive.ts` | drive virtuale veloce sul bus seriale del KERNAL |
+| `src/drive1541.ts` | 1541 emulato: CPU, memoria, meccanica, bus seriale |
+| `src/via.ts` | VIA 6522 |
+| `src/gcr.ts` | conversione D64 → GCR |
 | `src/cartridge.ts` | cartucce .CRT e cambio di banco |
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
 | `src/vkbd.ts` | tastiera C64 a schermo |
@@ -54,11 +58,12 @@ mkdir -p testdata && curl -sSfL -o testdata/6502_functional_test.bin https://raw
 npx esbuild test/cputest.ts --bundle --platform=node --outfile=/tmp/cputest.js && node /tmp/cputest.js testdata/6502_functional_test.bin
 ```
 
-I test che usano le ROM originali leggono la cartella indicata dalla variabile `ORIG`.
+I test che usano le ROM originali leggono la cartella indicata dalla variabile `ORIG`; quelli del 1541 emulato (`test/drive.ts`, `test/fastxfer.ts`) leggono la ROM del drive dalla variabile `DRIVEROM`.
 
 ## Limiti noti
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
-- Il drive è virtuale, non un 1541 emulato: i fastloader che caricano codice proprio nel drive (`M-E`) non funzionano; quando un programma ci prova compare un avviso
+- Con il drive virtuale i fastloader non funzionano (compare un avviso): serve il 1541 emulato
+- Il 1541 emulato legge ma non scrive il disco (`SAVE` risponde `WRITE PROTECT ON`); la codifica GCR è a livello di byte, quindi le protezioni anticopia che dipendono dai singoli bit non sono riprodotte
 - Cartucce `.CRT`: non sono supportati i tipi con freezer o hardware speciale (Action Replay, Final Cartridge III, Retro Replay…)
 
 ## Licenza
