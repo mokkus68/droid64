@@ -20,6 +20,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Secondo drive (device 9)**, virtuale o 1541 emulato: i due 1541 emulati condividono il bus seriale come due drive veri in catena (numero di dispositivo dai ponticelli PB5-6 della VIA)
 - **Dischi G64**: superficie GCR completa con mezze tracce e sincronismi non allineati ai byte, quindi le protezioni anticopia che il D64 perde; letti e scritti dal 1541 emulato e scaricabili come `.g64`
 - **Dischi D71 (1571) e D81 (1581)** con il drive virtuale: lettura, directory, salvataggio, cancellazione, rinomina e formattazione, dischi vuoti
+- **Snapshot**: stato completo della macchina (CPU, memoria, VIC, SID, CIA, REU, cartuccia, 1541 emulati con testina e memoria, dischi, nastro e configurazione) salvato nel database del browser, scaricabile e riapribile da file; il ripristino controlla che le ROM siano le stesse
 - **Caricamento**: PRG, D64, D71, D81, T64 e TAP
 
 ## ROM
@@ -55,6 +56,7 @@ La versione (`version` in `package.json`) e la data di compilazione compaiono in
 | `src/gcr.ts` | codifica GCR, decodifica a livello di bit, formato G64 |
 | `src/geometry.ts` | geometrie D64, D71 e D81 (tracce, settori, BAM) |
 | `src/d64write.ts` | scrittura su D64: BAM, directory, cancellazione, rinomina, formattazione |
+| `src/snapshot.ts` | cattura e ripristino dello stato, archivio IndexedDB |
 | `src/reu.ts` | espansione di memoria REU |
 | `src/tape.ts` | registratore (Datasette) da file .TAP |
 | `src/cartridge.ts` | cartucce .CRT e cambio di banco |

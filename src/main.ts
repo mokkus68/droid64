@@ -9,6 +9,7 @@ import { Cartridge } from './cartridge';
 import { blankDisk, isDiskImageSize, geometryFor, DiskKind } from './geometry';
 import { Tape, blankTap } from './tape';
 import { isG64, parseG64, gcrDiskToD64 } from './gcr';
+import { listSnapshots, putSnapshot, deleteSnapshot, fingerprint, bytesToBase64, base64ToBytes, capture, restore, StoredSnapshot } from './snapshot';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -1025,6 +1026,169 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.ad
 });
 c64.setReu(reuSize);
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.setAttribute('aria-pressed', String(Number(b.dataset.reu) === reuSize));
+
+// ---------- snapshots ----------
+const SNAP_FORMAT = 'droid64-snapshot';
+const romPrint = () => fingerprint(romInfo.roms.basic, romInfo.roms.kernal, romInfo.roms.chargen);
+
+function screenThumb(): string {
+  try {
+    const t = document.createElement('canvas');
+    t.width = 192; t.height = 136;
+    const g = t.getContext('2d')!;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(canvas, 0, 0, 192, 136);
+    return t.toDataURL('image/png');
+  } catch { return ''; }
+}
+
+function snapshotTitle(): string {
+  const parts = [cartridge?.name, disk ? diskName : '', tape?.name].filter(Boolean);
+  return parts.length ? parts.join(' · ') : romInfo.original ? 'BASIC' : 'BASIC (ROM libere)';
+}
+
+/** Everything needed to bring the machine back: configuration, media and the chips' state. */
+function buildSnapshot() {
+  c64.drive?.flushWrites(); c64.drive9?.flushWrites();
+  const img8 = disk && diskImage ? c64.currentImage(8) ?? diskImage : null;
+  const img9 = c64.disk9 && disk9Image ? c64.currentImage(9) ?? disk9Image : null;
+  return {
+    format: SNAP_FORMAT, version: 1, app: (document.getElementById('version')?.textContent ?? '').trim(),
+    created: Date.now(), title: snapshotTitle(), thumb: screenThumb(),
+    roms: romPrint(), driveRom: c64.drive ? fingerprint(b64ToBytes(userRoms.dos1541!)) : null,
+    config: { reu: reuSize, trueDrive: !!c64.drive, drive9: drive9On, ports: portDev, joyPort },
+    media: {
+      disk8: img8 ? { name: diskName, data: bytesToBase64(img8) } : null,
+      disk9: img9 ? { name: disk9Name, data: bytesToBase64(img9) } : null,
+      tape: tape ? { name: tape.name, data: bytesToBase64(tape.toTap()), state: capture(tape, new Set(['data'])) } : null,
+      cart: c64.cart ? { data: bytesToBase64(c64.cart.source) } : null,
+    },
+    state: c64.saveState(),
+  };
+}
+type Snapshot = ReturnType<typeof buildSnapshot>;
+
+async function saveSnapshot() {
+  try {
+    const snap = buildSnapshot();
+    const data = JSON.stringify(snap);
+    await putSnapshot({ id: String(snap.created), created: snap.created, title: snap.title, thumb: snap.thumb, size: data.length, data });
+    await renderSnapshots();
+    toast(`Snapshot salvato: ${snap.title}`);
+  } catch (e) {
+    toast(`Impossibile salvare lo snapshot: ${(e as Error).message || 'spazio del browser non disponibile'}`);
+  }
+}
+
+function applySnapshot(snap: Snapshot) {
+  if (snap.format !== SNAP_FORMAT) throw new Error('non è uno snapshot di droid64');
+  if (snap.roms !== romPrint()) {
+    throw new Error('è stato fatto con ROM del C64 diverse da quelle caricate ora (ROM originali o libere): carica le stesse ROM e riprova');
+  }
+  if (snap.config.trueDrive && !userRoms.dos1541) throw new Error('usa il 1541 emulato: carica prima la ROM del 1541');
+  if (snap.config.trueDrive && snap.driveRom && snap.driveRom !== fingerprint(b64ToBytes(userRoms.dos1541!))) {
+    throw new Error('è stato fatto con una ROM del 1541 diversa');
+  }
+  // configuration (these may reset the machine: the state is loaded afterwards)
+  if (reuSize !== snap.config.reu) setReuSize(snap.config.reu);
+  if (!!c64.drive !== snap.config.trueDrive) setTrueDrive(snap.config.trueDrive);
+  if (drive9On !== snap.config.drive9) setDrive9(snap.config.drive9);
+  portDev = snap.config.ports as [PortDev, PortDev];
+  applyPortDevices();
+  setJoyPort(snap.config.joyPort);
+  // media
+  const m = snap.media;
+  c64.insertCartridge(m.cart ? new Cartridge(base64ToBytes(m.cart.data)) : null);
+  showCartridge();
+  c64.mountDisk(null);
+  if (m.disk8) { originalImage = null; insertD64(base64ToBytes(m.disk8.data), m.disk8.name, true); }
+  else { disk = null; diskImage = null; showDirectory(''); }
+  if (drive9On) {
+    if (m.disk9) insertDisk9(base64ToBytes(m.disk9.data), m.disk9.name);
+    else { disk9Image = null; disk9Name = ''; c64.mountDisk(null, null, false, 9); showDrive9(); }
+  }
+  if (m.tape) {
+    const t = new Tape(base64ToBytes(m.tape.data), m.tape.name);
+    restore(t, m.tape.state);
+    insertTape(t);
+  } else insertTape(null);
+  // the chips
+  c64.loadState(snap.state as any);
+  keyboard.releaseAll();
+  draw();
+}
+
+async function restoreSnapshot(s: StoredSnapshot) {
+  try {
+    applySnapshot(JSON.parse(s.data));
+    toast(`Snapshot ripristinato: ${s.title}`);
+    screenWrap.focus();
+  } catch (e) {
+    toast(`Impossibile ripristinare lo snapshot: ${(e as Error).message}`);
+  }
+}
+
+function downloadText(name: string, text: string) {
+  try {
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch { toast('Il browser ha bloccato lo scaricamento'); }
+}
+
+async function renderSnapshots() {
+  let list: StoredSnapshot[] = [];
+  try { list = await listSnapshots(); } catch { /* IndexedDB unavailable */ }
+  list.sort((a, b) => b.created - a.created);
+  const ul = $('snap-list');
+  ul.replaceChildren();
+  $('snap-empty').hidden = list.length > 0;
+  for (const s of list) {
+    const li = document.createElement('li');
+    const img = document.createElement('img');
+    img.alt = ''; img.width = 96; img.height = 68;
+    if (s.thumb) img.src = s.thumb; else img.style.visibility = 'hidden';
+    const info = document.createElement('div');
+    info.className = 'snap-info';
+    const title = document.createElement('strong'); title.textContent = s.title;
+    const when = document.createElement('small');
+    when.textContent = `${new Date(s.created).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })} · ${(s.size / 1024 / 1024).toFixed(1)} MB`;
+    const row = document.createElement('div'); row.className = 'row';
+    const mk = (label: string, fn: () => void, cls = '') => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; if (cls) b.className = cls; b.addEventListener('click', fn); row.append(b); return b; };
+    mk('Ripristina', () => restoreSnapshot(s), 'primary');
+    mk('Scarica', () => downloadText(`droid64-${s.title.replace(/[^\w.-]+/g, '_')}-${s.id}.c64snap`, s.data));
+    const del = mk('Elimina', async () => {
+      if (del.dataset.armed !== '1') { del.dataset.armed = '1'; del.textContent = 'Conferma'; setTimeout(() => { del.dataset.armed = '0'; del.textContent = 'Elimina'; }, 3000); return; }
+      try { await deleteSnapshot(s.id); } catch { /* ignore */ }
+      renderSnapshots();
+    });
+    info.append(title, when, row);
+    li.append(img, info);
+    ul.append(li);
+  }
+}
+
+for (const b of document.querySelectorAll<HTMLButtonElement>('.js-snap')) b.addEventListener('click', () => { saveSnapshot(); screenWrap.focus(); });
+const snapFile = $<HTMLInputElement>('snapfile');
+$('snap-load').addEventListener('click', () => snapFile.click());
+snapFile.addEventListener('change', async () => {
+  const f = snapFile.files?.[0]; snapFile.value = '';
+  if (!f) return;
+  try {
+    const text = await f.text();
+    const snap = JSON.parse(text) as Snapshot;
+    applySnapshot(snap);
+    await putSnapshot({ id: String(snap.created), created: snap.created, title: snap.title, thumb: snap.thumb || screenThumb(), size: text.length, data: text }).catch(() => {});
+    renderSnapshots();
+    toast(`Snapshot ripristinato da file: ${snap.title}`);
+    screenWrap.focus();
+  } catch (e) {
+    toast(`Impossibile aprire lo snapshot: ${(e as Error).message}`);
+  }
+});
+renderSnapshots();
 
 // ---------- controls ----------
 $('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk, diskImage); toast('Reset'); screenWrap.focus(); });

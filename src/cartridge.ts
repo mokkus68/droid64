@@ -47,7 +47,11 @@ export class Cartridge {
   /** called when EXROM/GAME change so the machine can rebuild its memory map */
   onLinesChanged: () => void = () => {};
 
+  /** the .CRT file this cartridge was built from (kept for snapshots) */
+  readonly source: Uint8Array;
+
   constructor(img: Uint8Array) {
+    this.source = img;
     const sig = String.fromCharCode(...img.subarray(0, 16));
     if (!sig.startsWith('C64 CARTRIDGE')) throw new Error('non è un file .CRT per C64');
     const dv = new DataView(img.buffer, img.byteOffset, img.byteLength);

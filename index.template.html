@@ -178,6 +178,15 @@ body.fs-open { overflow: hidden; }
 .monitor.fs[data-fsmode="kbd"] #touchpad { display: none !important; }
 .monitor.fs[data-fsmode="joy"] #touchpad, .monitor.fs[data-fsmode="joy"] #touchpad[hidden] { display: grid !important; flex: 1 1 auto; align-content: center; }
 
+/* snapshots */
+#snap-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+#snap-list li { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
+#snap-list img { width: 96px; height: 68px; border-radius: 3px; background: #000; image-rendering: pixelated; flex: 0 0 auto; border: 1px solid var(--case-edge); }
+.snap-info { display: grid; gap: 4px; min-width: 0; }
+.snap-info strong { font: 500 13px/1.25 var(--font-mono); overflow-wrap: anywhere; }
+.snap-info small { color: var(--muted); font-size: 12px; }
+.snap-info button { min-height: 30px; padding: 5px 9px; font-size: 12px; }
+
 /* inserted cartridge */
 button.freeze { background: #b8352d; border-color: #b8352d; color: #fff; }
 .cart { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border: 1px solid var(--case-edge); border-radius: var(--r); padding: 10px; background: #1f1c19; }
@@ -298,6 +307,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         <button type="button" id="pause" aria-pressed="false">Pausa</button>
         <button type="button" id="turbo" aria-pressed="false" title="Esegue alla massima velocità">Turbo</button>
         <button type="button" class="js-freeze freeze" hidden title="Pulsante freeze della cartuccia">Freeze</button>
+        <button type="button" class="js-snap" title="Salva lo stato completo del C64">Snapshot</button>
         <button type="button" id="fullscreen" aria-pressed="false">Schermo intero</button>
         <button type="button" id="touch-toggle" aria-pressed="false" title="Mostra joystick e tasti a schermo">Joystick a schermo</button>
         <span class="spacer"></span>
@@ -439,6 +449,18 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-dev2="paddle" aria-pressed="false">Paddle</button>
         </div>
         <p id="mouse-note" hidden>Clicca sullo schermo per catturare il mouse; <kbd>Esc</kbd> lo libera. Mouse 1351: tasto sinistro = fuoco, destro = su. Paddle: il movimento orizzontale gira la paddle 1, quello verticale la paddle 2; i tasti sinistro e destro sono i loro pulsanti. GEOS usa il mouse sulla porta 1.</p>
+      </section>
+
+      <section class="panel" id="snapshots">
+        <h2>Snapshot</h2>
+        <p>Uno snapshot congela tutto il C64 (memoria, chip, drive, dischi, nastro e cartuccia) per riprendere esattamente da quel punto, anche a metà di un gioco.</p>
+        <div class="row">
+          <button type="button" class="js-snap primary">Salva snapshot</button>
+          <button type="button" id="snap-load">Apri da file…</button>
+        </div>
+        <input type="file" id="snapfile" accept=".c64snap,.json" hidden>
+        <p id="snap-empty">Nessuno snapshot salvato in questo browser.</p>
+        <ul id="snap-list"></ul>
       </section>
 
       <section class="panel" id="expansions">

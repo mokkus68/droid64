@@ -9,6 +9,7 @@ import { Cartridge } from './cartridge';
 import { VirtualDrive } from './vdrive';
 import { Drive1541 } from './drive1541';
 import { isG64 } from './gcr';
+import { capture, restore } from './snapshot';
 import { Tape } from './tape';
 import { REU } from './reu';
 
@@ -441,6 +442,36 @@ export class C64 implements Bus {
     this.drive9 = rom && this.drive9Enabled ? this.makeDrive(rom, 9, this.diskImage9) : null;
     this.mountDisk(this.disk, this.diskImage, true);
     this.mountDisk(this.disk9, this.diskImage9, true, 9);
+  }
+
+  // ---------- snapshots ----------
+  /** fields never saved: ROMs, media (saved separately), back references, audio buffer, picture */
+  private static SKIP = new Set(['roms', 'cart', 'disk', 'disk9', 'diskImage', 'diskImage9', 'vdrive', 'vdrive9',
+    'drive', 'drive9', 'tape', 'traps', 'driveRom', 'activeV', 'bus', 'mem', 'frameBuffer', 'buffer', 'rom', 'gcr', 'image', 'dirty', 'lo', 'hi', 'source']);
+
+  /** Machine state (media excluded: they are mounted again before restoring). */
+  saveState() {
+    this.drive?.flushWrites(); this.drive9?.flushWrites();
+    const skip = C64.SKIP;
+    return {
+      c64: capture(this, skip),
+      drive8: this.drive ? capture(this.drive, skip) : null,
+      drive9: this.drive9 ? capture(this.drive9, skip) : null,
+      cart: this.cart ? capture(this.cart, skip) : null,
+    };
+  }
+
+  /** Restore a state saved by saveState() into a machine with the same configuration and media. */
+  loadState(st: { c64: any; drive8: any; drive9: any; cart: any }) {
+    restore(this, st.c64);
+    if (st.drive8 && this.drive) restore(this.drive, st.drive8);
+    if (st.drive9 && this.drive9) restore(this.drive9, st.drive9);
+    if (st.cart && this.cart) restore(this.cart, st.cart);
+    // rebuild what is derived from the restored registers
+    this.updatePort();
+    this.buildTraps();
+    this.updateTrap();
+    this.sid.readPos = this.sid.writePos;
   }
 
   /** The current image of a drive: for a G64 in an emulated 1541, the surface as written so far. */
