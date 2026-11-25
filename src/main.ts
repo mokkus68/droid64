@@ -8,6 +8,7 @@ import { buildKeyboard } from './vkbd';
 import { Cartridge } from './cartridge';
 import { blankDisk, isDiskImageSize, geometryFor, DiskKind } from './geometry';
 import { Tape, blankTap } from './tape';
+import { isG64, parseG64, gcrDiskToD64 } from './gcr';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -72,7 +73,7 @@ function rebuildMachine() {
   if (cartridge) c64.insertCartridge(cartridge);
   if (tape) c64.insertTape(tape);
   c64.enableDrive9(drive9On);
-  if (disk9Image) c64.mountDisk(parseD64(disk9Image), disk9Image, false, 9);
+  if (disk9Image) c64.mountDisk(listDisk(disk9Image), disk9Image, false, 9);
   c64.setReu(reuSize);
   applyPortDevices();
   applyDriveMode();
@@ -90,7 +91,7 @@ function applyDriveMode() {
   c64.attachDrive(on ? b64ToBytes(userRoms.dos1541!) : null);
   c64.reset();
   if (disk) c64.mountDisk(disk, diskImage);
-  if (disk9Image) c64.mountDisk(parseD64(disk9Image), disk9Image, false, 9);
+  if (disk9Image) c64.mountDisk(listDisk(disk9Image), disk9Image, false, 9);
 }
 function setTrueDrive(on: boolean) {
   trueDrive = on;
@@ -583,11 +584,13 @@ async function handleFiles(files: FileList | File[]) {
       if (disk) c64.mountDisk(disk, diskImage);
       showCartridge();
       toast(`Cartuccia inserita: ${cart.name}`);
-    } else if (/\.(d64|d71|d81)$/.test(name) || isDiskImageSize(data.length)) {
+    } else if (/\.(d64|d71|d81|g64)$/.test(name) || isDiskImageSize(data.length) || isG64(data)) {
       const saved = loadSavedDisk(f.name);
       originalImage = data.slice();
-      const img = saved && saved.length === data.length ? saved : data;
+      const img = saved && (saved.length === data.length || isG64(saved)) ? saved : data;
+      const note = isG64(img) ? prepareForG64() : '';
       insertD64(img, f.name, !!saved);
+      if (note) setTimeout(() => toast(note.trim()), 50);
       const first = disk!.files.find((x) => x.data && x.type === 'PRG');
       toast(saved
         ? `Disco inserito con le modifiche salvate in questo browser (${disk!.files.length} file). Per ripartire dal file originale usa “Torna all'originale”.`
@@ -665,16 +668,28 @@ function loadSavedDisk(name: string): Uint8Array | null {
   try { return b64ToBytes(b64); } catch { return null; }
 }
 
+/** Directory listing of a disk image (a G64 is decoded from its GCR tracks). */
+function listDisk(img: Uint8Array) { return parseD64(isG64(img) ? gcrDiskToD64(parseG64(img)) : img); }
+const diskExt = (img: Uint8Array) => (isG64(img) ? 'g64' : geometryFor(img).kind);
+
+/** G64 disks need the emulated 1541; returns a message if the mode had to change (or could not). */
+function prepareForG64(): string {
+  if (c64.drive) return '';
+  if (userRoms.dos1541) { setTrueDrive(true); return ' Per il G64 è stato attivato il 1541 emulato.'; }
+  return ' Senza la ROM del 1541 il G64 si legge in sola lettura con il drive virtuale (niente protezioni né fastloader).';
+}
+
 /** Insert a disk image in drive 8; returns true if it had to switch from the 1541 to the virtual drive. */
 function insertD64(img: Uint8Array, name: string, modified: boolean): boolean {
-  const kind = geometryFor(img).kind;
+  const g64 = isG64(img);
+  const kind = g64 ? 'd64' : geometryFor(img).kind;
   const switched = kind !== 'd64' && !!c64.drive;
   if (switched) {
     // the emulated drive is a 1541: D71/D81 need the virtual drive
     setTrueDrive(false);
     toast(`Il 1541 emulato legge solo dischi D64: per questo ${kind.toUpperCase()} uso il drive virtuale. Puoi tornare al 1541 dal pannello Drive 8.`);
   }
-  disk = parseD64(img);
+  disk = listDisk(img);
   diskImage = img;
   diskName = name;
   diskModified = modified;
@@ -687,7 +702,9 @@ function insertD64(img: Uint8Array, name: string, modified: boolean): boolean {
 function onDiskChanged(device = 8) {
   if (device === 9) { onDisk9Changed(); return; }
   if (!diskImage) return;
-  disk = c64.disk ?? parseD64(diskImage);
+  // a G64 stays as GCR: take the surface the 1541 wrote
+  if (isG64(diskImage)) diskImage = c64.currentImage(8) ?? diskImage;
+  disk = c64.disk ?? listDisk(diskImage);
   diskModified = true;
   showDirectory(diskName);
   flashDrive();
@@ -707,8 +724,9 @@ function onDiskSave(name: string, code: number, device = 8) {
 $('download-disk').addEventListener('click', () => {
   if (!diskImage) return;
   c64.drive?.flushWrites();
-  const ext = diskImage ? geometryFor(diskImage).kind : 'd64';
-  const name = /\.d(64|71|81)$/i.test(diskName) ? diskName : diskName.replace(/\.[^.]*$/, '') + '.' + ext;
+  if (isG64(diskImage)) diskImage = c64.currentImage(8) ?? diskImage;
+  const ext = diskExt(diskImage);
+  const name = /\.(d64|d71|d81|g64)$/i.test(diskName) ? diskName : diskName.replace(/\.[^.]*$/, '') + '.' + ext;
   try {
     const url = URL.createObjectURL(new Blob([diskImage], { type: 'application/octet-stream' }));
     const a = document.createElement('a');
@@ -763,18 +781,19 @@ function setDrive9(on: boolean) {
   renderSavedDisks();
 }
 function insertDisk9(img: Uint8Array, name: string) {
-  const kind = geometryFor(img).kind;
+  const kind = isG64(img) ? 'd64' : geometryFor(img).kind;
   if (kind !== 'd64' && c64.drive) {
     setTrueDrive(false);
     toast(`Il 1541 emulato legge solo dischi D64: per questo ${kind.toUpperCase()} uso i drive virtuali.`);
   }
   c64.drive9?.flushWrites();
   disk9Image = img; disk9Name = name;
-  c64.mountDisk(parseD64(img), img, false, 9);
+  c64.mountDisk(listDisk(img), img, false, 9);
   showDrive9();
 }
 function onDisk9Changed() {
   if (!disk9Image) return;
+  if (isG64(disk9Image)) disk9Image = c64.currentImage(9) ?? disk9Image;
   flashDrive9();
   store.set(diskKey(disk9Name), bytesToB64(disk9Image));
   showDrive9();
@@ -803,9 +822,10 @@ file9.addEventListener('change', async () => {
   const f = file9.files?.[0]; file9.value = '';
   if (!f) return;
   const data = new Uint8Array(await f.arrayBuffer());
-  if (!isDiskImageSize(data.length)) { toast(`${f.name} non è un'immagine D64, D71 o D81`); return; }
+  if (!isDiskImageSize(data.length) && !isG64(data)) { toast(`${f.name} non è un'immagine D64, D71, D81 o G64`); return; }
   const saved = loadSavedDisk(f.name);
-  insertDisk9(saved && saved.length === data.length ? saved : data, f.name);
+  if (isG64(data)) { const note = prepareForG64(); if (note) setTimeout(() => toast(note.trim()), 50); }
+  insertDisk9(saved && (saved.length === data.length || isG64(saved)) ? saved : data, f.name);
   toast(`Disco “${f.name}” inserito nel drive 9`);
 });
 $('drive9-new').addEventListener('click', () => {
@@ -827,7 +847,8 @@ $('drive9-eject').addEventListener('click', () => {
 $('drive9-download').addEventListener('click', () => {
   if (!disk9Image) return;
   c64.drive9?.flushWrites();
-  const name = /\.d(64|71|81)$/i.test(disk9Name) ? disk9Name : disk9Name + '.' + geometryFor(disk9Image).kind;
+  if (isG64(disk9Image)) disk9Image = c64.currentImage(9) ?? disk9Image;
+  const name = /\.(d64|d71|d81|g64)$/i.test(disk9Name) ? disk9Name : disk9Name + '.' + diskExt(disk9Image);
   try {
     const url = URL.createObjectURL(new Blob([disk9Image], { type: 'application/octet-stream' }));
     const a = document.createElement('a');

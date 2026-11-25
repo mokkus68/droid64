@@ -8,6 +8,7 @@ import { D64File, DiskImage, matchName, buildDirectoryListing, parseD64 } from '
 import { Cartridge } from './cartridge';
 import { VirtualDrive } from './vdrive';
 import { Drive1541 } from './drive1541';
+import { isG64 } from './gcr';
 import { Tape } from './tape';
 import { REU } from './reu';
 
@@ -423,8 +424,9 @@ export class C64 implements Bus {
       return { clk, data };
     };
     d.onDiskWritten = () => {
-      if (device === 9) { if (this.diskImage9) this.disk9 = parseD64(this.diskImage9); }
-      else if (this.diskImage) this.disk = parseD64(this.diskImage);
+      // a G64 stays as GCR: its listing comes from decoding the surface
+      const listing = d.isG64 ? d.decodedD64() : device === 9 ? this.diskImage9 : this.diskImage;
+      if (listing) { const p = parseD64(listing); if (device === 9) this.disk9 = p; else this.disk = p; }
       this.onDiskChanged?.(device);
     };
     d.resetClock(this.now);
@@ -439,6 +441,13 @@ export class C64 implements Bus {
     this.drive9 = rom && this.drive9Enabled ? this.makeDrive(rom, 9, this.diskImage9) : null;
     this.mountDisk(this.disk, this.diskImage, true);
     this.mountDisk(this.disk9, this.diskImage9, true, 9);
+  }
+
+  /** The current image of a drive: for a G64 in an emulated 1541, the surface as written so far. */
+  currentImage(device: 8 | 9 = 8): Uint8Array | null {
+    const d = device === 9 ? this.drive9 : this.drive;
+    if (d?.isG64) return d.exportG64();
+    return device === 9 ? this.diskImage9 : this.diskImage;
   }
 
   /** Connect or disconnect the second drive (device 9). */
@@ -463,7 +472,8 @@ export class C64 implements Bus {
     const cur = nine ? this.vdrive9 : this.vdrive;
     if (nine) this.diskImage9 = image; else this.diskImage = image;
     if (!force && disk && (nine ? this.disk9 : this.disk) === disk && cur) { this.updateTrap(); return; }
-    const v = disk ? new VirtualDrive(disk, image, device) : null;
+    // a G64 is raw GCR: the virtual drive serves it read-only from its decoded listing
+    const v = disk ? new VirtualDrive(disk, image && isG64(image) ? null : image, device) : null;
     if (v) {
       v.onActivity = () => this.onDriveActivity?.(device);
       v.onFastloader = () => this.onFastloader?.();

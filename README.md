@@ -11,13 +11,14 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone. Da computer lo schermo intero mostra solo lo schermo del C64, il più grande possibile
 - **Drive 8**: LED verde con disco inserito e LED rosso a ogni accesso; pulsanti per vedere la directory (`LOAD"$",8` + `LIST`) e per caricare e avviare il primo programma (`LOAD"*",8,1` + `RUN` o `SYS`)
 - **Cartucce .CRT**: normali 8K/16K/Ultimax, freezer Action Replay (32 KB ROM + 8 KB RAM) e Final Cartridge III (64 KB) con pulsante Freeze, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
-- **1541 emulato** (con la ROM del drive caricata dall'utente): processore 6502 del drive, 2 KB di RAM, due VIA 6522, motore e testina, disco convertito in GCR con le zone di velocità reali, bus seriale ATN/CLK/DATA. C64 e drive avanzano insieme con precisione al ciclo, quindi funzionano anche i fastloader. Turbo automatico mentre il drive gira
+- **1541 emulato** (con la ROM del drive caricata dall'utente): processore 6502 del drive, 2 KB di RAM, due VIA 6522, motore e testina con mezze tracce, lettura e scrittura bit per bit (sincronismo da 10 bit a 1, byte pronto ogni 8 bit) alla velocità della zona, bus seriale ATN/CLK/DATA. C64 e drive avanzano insieme con precisione al ciclo, quindi funzionano anche i fastloader. Turbo automatico mentre il drive gira
 - **Drive virtuale veloce (device 8)**, in alternativa: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
 - **Scrittura su disco** con entrambi i drive: `SAVE` (anche `@0:` per sostituire), file `SEQ`/`PRG` aperti in scrittura, cancellazione `S:`, rinomina `R:`, formattazione `N:`. Con il 1541 emulato scrive il DOS del drive in GCR e i settori vengono ridecodificati nell'immagine D64. I dischi modificati restano salvati nel browser, si possono scaricare come `.d64` e si possono creare dischi vuoti
 - **Nastri .TAP** (v0 e v1): registratore emulato a livello di impulsi sul pin FLAG del CIA1, con tasto PLAY e motore sulla porta `$01`, quindi funzionano sia il caricamento del KERNAL sia i turbo loader. Avvio automatico, turbo mentre il motore gira (disattivabile nel pannello del registratore per avere la velocità reale), contagiri del Datasette (non lineare come la bobina vera) con tasto di azzeramento. Salvataggio su nastro: con RECORD premuto gli impulsi che il C64 scrive (bit 3 di `$01`) vengono registrati in formato TAP, scaricabili e salvati nel browser
 - **Mouse 1351 e paddle** su entrambe le porte: letti dal SID (`POTX`/`POTY`) con la selezione della porta dal CIA1; il mouse del browser viene catturato sullo schermo (Pointer Lock)
 - **REU** 1700 (128 KB), 1764 (256 KB) e 1750 (512 KB): registri a `$DF00`, trasferimenti stash, fetch, swap e verify, autoload, indirizzi fissi, interrupt e avvio con scrittura su `$FF00`
 - **Secondo drive (device 9)**, virtuale o 1541 emulato: i due 1541 emulati condividono il bus seriale come due drive veri in catena (numero di dispositivo dai ponticelli PB5-6 della VIA)
+- **Dischi G64**: superficie GCR completa con mezze tracce e sincronismi non allineati ai byte, quindi le protezioni anticopia che il D64 perde; letti e scritti dal 1541 emulato e scaricabili come `.g64`
 - **Dischi D71 (1571) e D81 (1581)** con il drive virtuale: lettura, directory, salvataggio, cancellazione, rinomina e formattazione, dischi vuoti
 - **Caricamento**: PRG, D64, D71, D81, T64 e TAP
 
@@ -51,7 +52,7 @@ La versione (`version` in `package.json`) e la data di compilazione compaiono in
 | `src/vdrive.ts` | drive virtuale veloce sul bus seriale del KERNAL |
 | `src/drive1541.ts` | 1541 emulato: CPU, memoria, meccanica, bus seriale |
 | `src/via.ts` | VIA 6522 |
-| `src/gcr.ts` | conversione D64 ↔ GCR |
+| `src/gcr.ts` | codifica GCR, decodifica a livello di bit, formato G64 |
 | `src/geometry.ts` | geometrie D64, D71 e D81 (tracce, settori, BAM) |
 | `src/d64write.ts` | scrittura su D64: BAM, directory, cancellazione, rinomina, formattazione |
 | `src/reu.ts` | espansione di memoria REU |
@@ -76,7 +77,7 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 ## Limiti noti
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
 - Con il drive virtuale i fastloader non funzionano (compare un avviso): serve il 1541 emulato
-- La codifica GCR del 1541 emulato è a livello di byte: le protezioni anticopia che dipendono dai singoli bit non sono riprodotte
+- Il 1541 emulato non riproduce i bit deboli o le variazioni di velocità all'interno di una traccia (G64 con tabelle di velocità per byte)
 - I file `.T64` sono di sola lettura; con le Open ROMs il salvataggio su nastro non funziona (il loro KERNAL non lo implementa)
 - Cartucce `.CRT`: non sono supportati gli altri tipi con hardware speciale (Retro Replay, Expert, Atomic Power…)
 

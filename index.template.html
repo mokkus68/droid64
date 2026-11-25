@@ -346,10 +346,10 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       <section class="panel">
         <h2>Programmi</h2>
         <div class="drop">
-          <button type="button" class="primary" id="pick">Apri PRG, D64/D71/D81, T64, TAP o CRT</button>
+          <button type="button" class="primary" id="pick">Apri PRG, D64/D71/D81/G64, T64, TAP o CRT</button>
           <small>oppure trascina il file sulla pagina</small>
         </div>
-        <input type="file" id="file" accept=".prg,.d64,.d71,.d81,.t64,.tap,.crt,.p00,.bin,.rom" multiple hidden>
+        <input type="file" id="file" accept=".prg,.d64,.d71,.d81,.g64,.t64,.tap,.crt,.p00,.bin,.rom" multiple hidden>
         <div id="cartridge" class="cart" hidden>
           <div class="cart-label"><span class="cart-slot" aria-hidden="true"></span><div><div id="cart-name"></div><small id="cart-type"></small></div></div>
           <button type="button" class="js-freeze freeze" hidden>Freeze</button>
@@ -376,7 +376,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
             <button type="button" id="drive9-download" hidden>Scarica</button>
             <button type="button" id="drive9-eject" hidden>Espelli</button>
           </div>
-          <input type="file" id="file9" accept=".d64,.d71,.d81" hidden>
+          <input type="file" id="file9" accept=".d64,.d71,.d81,.g64" hidden>
         </div>
         <div id="saved-disks" class="saved" hidden>
           <small>Dischi e nastri salvati in questo browser</small>
