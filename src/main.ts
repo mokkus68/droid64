@@ -542,10 +542,17 @@ function showCartridge() {
   cartridge = c64.cart;
   const box = $('cartridge');
   box.hidden = !cartridge;
+  for (const b of document.querySelectorAll<HTMLButtonElement>('.js-freeze')) b.hidden = !cartridge?.isFreezer;
   if (!cartridge) return;
   $('cart-name').textContent = cartridge.name;
   $('cart-type').textContent = cartridge.typeName;
 }
+for (const b of document.querySelectorAll<HTMLButtonElement>('.js-freeze')) b.addEventListener('click', () => {
+  if (!c64.cart?.isFreezer) return;
+  c64.cart.freeze();
+  toast(`Freeze: il programma è fermo, comanda ${c64.cart.name}`);
+  screenWrap.focus();
+});
 $('cart-remove').addEventListener('click', () => {
   c64.insertCartridge(null);
   if (disk) c64.mountDisk(disk, diskImage);

@@ -2,6 +2,8 @@
 
 export const CART_TYPES: Record<number, string> = {
   0: 'Normale (8K/16K/Ultimax)',
+  1: 'Action Replay (freezer)',
+  3: 'Final Cartridge III (freezer)',
   4: "Simons' BASIC",
   5: 'Ocean tipo 1',
   7: 'Fun Play / Power Play',
@@ -14,7 +16,7 @@ export const CART_TYPES: Record<number, string> = {
 };
 
 const UNSUPPORTED: Record<number, string> = {
-  1: 'Action Replay', 2: 'KCS Power Cartridge', 3: 'Final Cartridge III', 6: 'Expert Cartridge',
+  2: 'KCS Power Cartridge', 6: 'Expert Cartridge',
   9: 'Atomic Power', 11: 'Westermann Learning', 12: 'Rex Utility', 13: 'Final Cartridge I', 14: 'Magic Formel',
   18: 'Zaxxon / Super Zaxxon', 21: 'Comal-80', 36: 'Retro Replay', 45: 'Freeze Machine', 60: 'GMod2', 85: 'MegaByter',
 };
@@ -33,7 +35,15 @@ export class Cartridge {
   private lo: Uint8Array[] = [];   // ROML banks ($8000)
   private hi: Uint8Array[] = [];   // ROMH banks ($A000 or $E000)
   bank = 0;
-  private ram = new Uint8Array(256); // EasyFlash RAM at $DF00
+  private ram = new Uint8Array(8192); // EasyFlash RAM at $DF00 (256 bytes), Action Replay RAM (8K)
+  /** Action Replay: cartridge RAM mapped at $8000 / $DF00 */
+  private arRam = false;
+  /** freezer cartridges can be switched off by software until the next reset */
+  private active = true;
+  /** Final Cartridge III: control register visible at $DFFF */
+  private fc3Reg = true;
+  /** pulse the C64 NMI line (freeze button, FC3 register) */
+  onNmi: () => void = () => {};
   /** called when EXROM/GAME change so the machine can rebuild its memory map */
   onLinesChanged: () => void = () => {};
 
@@ -82,7 +92,10 @@ export class Cartridge {
   reset() {
     this.bank = 0;
     this.ram.fill(0);
+    this.active = true; this.arRam = false; this.fc3Reg = true;
     if (this.type === 32) this.setLines(1, 0); // EasyFlash boots in Ultimax mode
+    else if (this.type === 1) this.setLines(0, 1); // Action Replay: 8K mode, bank 0
+    else if (this.type === 3) this.setLines(0, 0); // Final Cartridge III: 16K mode, bank 0
     else if (this.type === 4) this.setLines(0, 1); // Simons' BASIC starts in 8K mode
     else this.setLines(this.headerExrom, this.headerGame);
   }
@@ -93,18 +106,37 @@ export class Cartridge {
     this.onLinesChanged();
   }
 
+  get isFreezer() { return this.type === 1 || this.type === 3; }
+
+  /** The freeze button: stop the running program and hand control to the cartridge ROM. */
+  freeze() {
+    if (this.type === 1) { this.active = true; this.bank = 0; this.arRam = false; }
+    if (this.type === 3) { this.fc3Reg = true; this.bank = 0; }
+    this.exrom = -1; // force a memory-map rebuild
+    this.setLines(1, 0); // Ultimax: the cartridge ROM supplies the NMI vector at $FFFA
+    this.onNmi();
+  }
+
+  /** Writes to $8000-$9FFF / ROMH area; returns true if the cartridge took them (Action Replay RAM). */
+  writeRom(addr: number, v: number): boolean {
+    if (this.type === 1 && this.arRam && (addr & 0xe000) === 0x8000) { this.ram[addr & 0x1fff] = v; return true; }
+    return false;
+  }
+
   readRoml(addr: number): number {
+    if (this.type === 1 && this.arRam) return this.ram[addr & 0x1fff];
     const b = this.lo[this.bank];
     return b ? b[addr & 0x1fff] : 0xff;
   }
   readRomh(addr: number): number {
     // Ocean 512K and similar map the same 8K bank at $A000 when no separate ROMH chip exists
-    const b = this.hi[this.bank] ?? (this.type === 5 ? this.lo[this.bank] : undefined);
+    const b = this.hi[this.bank] ?? (this.type === 5 || this.type === 1 ? this.lo[this.bank] : undefined);
     return b ? b[addr & 0x1fff] : 0xff;
   }
 
   io1Read(addr: number): number {
     switch (this.type) {
+      case 3: return this.readRoml(0x1e00 | (addr & 0xff));       // FC3: ROM page $9E00 of the bank
       case 4: this.setLines(0, 1); return 0xff;                  // Simons' BASIC: read → 8K
       case 15: this.bank = 0; return 0xff;                        // System 3: read resets bank
       case 17: this.bank = addr & 0x0f; return 0xff;             // Dinamic: read selects bank
@@ -114,6 +146,14 @@ export class Cartridge {
   }
   io1Write(addr: number, v: number) {
     switch (this.type) {
+      case 1:                                                     // Action Replay control register
+        if (!this.active) break;
+        this.bank = (v >> 3) & 3;
+        this.arRam = (v & 0x20) !== 0;
+        // bits 0-1: 00 = 8K, 01 = 16K, 10 = off, 11 = Ultimax
+        this.setLines(v & 2 ? 1 : 0, v & 1 ? 0 : 1);
+        if (v & 4) { this.active = false; this.arRam = false; this.setLines(1, 1); } // switched off until reset
+        break;
       case 4: this.setLines(0, 0); break;                         // Simons' BASIC: write → 16K
       case 5: this.bank = v & 0x3f; break;                        // Ocean
       case 7:                                                     // Fun Play
@@ -137,11 +177,23 @@ export class Cartridge {
   }
   io2Read(addr: number): number {
     if (this.type === 32) return this.ram[addr & 0xff];
+    if (this.type === 1) {                                        // Action Replay: last page of RAM or ROM
+      if (!this.active) return 0xff;
+      return this.arRam ? this.ram[0x1f00 | (addr & 0xff)] : this.readRoml(0x1f00 | (addr & 0xff));
+    }
+    if (this.type === 3) return this.readRoml(0x1f00 | (addr & 0xff)); // FC3: ROM page $9F00
     if (this.type === 10) return this.readRoml(0x1f00 | (addr & 0xff)); // Epyx: last ROM page
     return 0xff;
   }
   io2Write(addr: number, v: number) {
     if (this.type === 32) this.ram[addr & 0xff] = v;
+    if (this.type === 1 && this.active && this.arRam) this.ram[0x1f00 | (addr & 0xff)] = v;
+    if (this.type === 3 && (addr & 0xff) === 0xff && this.fc3Reg) {  // FC3 control register $DFFF
+      this.bank = v & 3;
+      this.setLines((v >> 4) & 1, (v >> 5) & 1);
+      if (!(v & 0x40)) this.onNmi();
+      if (v & 0x80) this.fc3Reg = false;
+    }
     if (this.type === 8) {                                        // Super Games
       this.bank = v & 3;
       if (v & 4) this.setLines(1, 1); else this.setLines(0, 0);

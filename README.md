@@ -10,7 +10,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Comandi touch**: joystick a schermo (8 direzioni, multitocco con il pulsante di fuoco) e tasti Spazio, Return, Run/Stop, F1–F7, Y, N; si attiva da solo sui telefoni
 - **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone. Da computer lo schermo intero mostra solo lo schermo del C64, il più grande possibile
 - **Drive 8**: LED verde con disco inserito e LED rosso a ogni accesso; pulsanti per vedere la directory (`LOAD"$",8` + `LIST`) e per caricare e avviare il primo programma (`LOAD"*",8,1` + `RUN` o `SYS`)
-- **Cartucce .CRT**: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
+- **Cartucce .CRT**: normali 8K/16K/Ultimax, freezer Action Replay (32 KB ROM + 8 KB RAM) e Final Cartridge III (64 KB) con pulsante Freeze, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
 - **1541 emulato** (con la ROM del drive caricata dall'utente): processore 6502 del drive, 2 KB di RAM, due VIA 6522, motore e testina, disco convertito in GCR con le zone di velocità reali, bus seriale ATN/CLK/DATA. C64 e drive avanzano insieme con precisione al ciclo, quindi funzionano anche i fastloader. Turbo automatico mentre il drive gira
 - **Drive virtuale veloce (device 8)**, in alternativa: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
 - **Scrittura su disco** con entrambi i drive: `SAVE` (anche `@0:` per sostituire), file `SEQ`/`PRG` aperti in scrittura, cancellazione `S:`, rinomina `R:`, formattazione `N:`. Con il 1541 emulato scrive il DOS del drive in GCR e i settori vengono ridecodificati nell'immagine D64. I dischi modificati restano salvati nel browser, si possono scaricare come `.d64` e si possono creare dischi vuoti
@@ -75,7 +75,7 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 - Con il drive virtuale i fastloader non funzionano (compare un avviso): serve il 1541 emulato
 - La codifica GCR del 1541 emulato è a livello di byte: le protezioni anticopia che dipendono dai singoli bit non sono riprodotte
 - I file `.T64` sono di sola lettura; con le Open ROMs il salvataggio su nastro non funziona (il loro KERNAL non lo implementa)
-- Cartucce `.CRT`: non sono supportati i tipi con freezer o hardware speciale (Action Replay, Final Cartridge III, Retro Replay…)
+- Cartucce `.CRT`: non sono supportati gli altri tipi con hardware speciale (Retro Replay, Expert, Atomic Power…)
 
 ## Licenza
 Il codice dell'emulatore è distribuito con licenza [MIT](LICENSE).

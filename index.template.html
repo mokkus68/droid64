@@ -173,6 +173,7 @@ body.fs-open { overflow: hidden; }
 .monitor.fs[data-fsmode="joy"] #touchpad, .monitor.fs[data-fsmode="joy"] #touchpad[hidden] { display: grid !important; flex: 1 1 auto; align-content: center; }
 
 /* inserted cartridge */
+button.freeze { background: #b8352d; border-color: #b8352d; color: #fff; }
 .cart { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border: 1px solid var(--case-edge); border-radius: var(--r); padding: 10px; background: #1f1c19; }
 .cart-label { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .cart-slot { width: 26px; height: 34px; border-radius: 3px 3px 1px 1px; background: linear-gradient(#3a3a3a, #1c1c1c); border-top: 4px solid #8a8a8a; flex: 0 0 auto; }
@@ -290,6 +291,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         <button type="button" id="restore" title="Tasto RESTORE (anche PagSu)">Restore</button>
         <button type="button" id="pause" aria-pressed="false">Pausa</button>
         <button type="button" id="turbo" aria-pressed="false" title="Esegue alla massima velocità">Turbo</button>
+        <button type="button" class="js-freeze freeze" hidden title="Pulsante freeze della cartuccia">Freeze</button>
         <button type="button" id="fullscreen" aria-pressed="false">Schermo intero</button>
         <button type="button" id="touch-toggle" aria-pressed="false" title="Mostra joystick e tasti a schermo">Joystick a schermo</button>
         <span class="spacer"></span>
@@ -344,6 +346,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         <input type="file" id="file" accept=".prg,.d64,.t64,.tap,.crt,.p00,.bin,.rom" multiple hidden>
         <div id="cartridge" class="cart" hidden>
           <div class="cart-label"><span class="cart-slot" aria-hidden="true"></span><div><div id="cart-name"></div><small id="cart-type"></small></div></div>
+          <button type="button" class="js-freeze freeze" hidden>Freeze</button>
           <button type="button" id="cart-remove">Rimuovi cartuccia</button>
         </div>
         <div id="directory" hidden>
@@ -475,7 +478,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       </section>
     </aside>
   </div>
-  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
+  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Action Replay e Final Cartridge III (con pulsante Freeze), Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>

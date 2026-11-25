@@ -180,6 +180,7 @@ export class C64 implements Bus {
     const t = this.map[addr >> 12];
     if (t === M_IO) { this.ioWrite(addr, v); return; }
     if (addr === 0xff00 && this.reu) { this.reu.ff00Written(); this.takeDmaStall(); }
+    if ((t === M_ROML || t === M_ROMH) && this.cart!.writeRom(addr, v)) return;
     if (this.ultimax && t !== M_RAM) return; // cartridge ROM / open bus in Ultimax mode
     this.ram[addr] = v;
   }
@@ -187,7 +188,10 @@ export class C64 implements Bus {
   /** Insert (or remove with null) a cartridge; the machine is reset. */
   insertCartridge(cart: Cartridge | null) {
     this.cart = cart;
-    if (cart) cart.onLinesChanged = () => this.updatePort();
+    if (cart) {
+      cart.onLinesChanged = () => this.updatePort();
+      cart.onNmi = () => this.cpu.triggerNMI();
+    }
     this.reset();
   }
 

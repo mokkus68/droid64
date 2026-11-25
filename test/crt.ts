@@ -2,21 +2,8 @@ import { makeC64, makeOrigC64 } from './util';
 import { Cartridge } from '../src/cartridge';
 import { writeFileSync } from 'fs';
 
-/** Build a .CRT image: chips = [{bank, load, data}] */
-export function buildCrt(type: number, exrom: number, game: number, name: string, chips: { bank: number; load: number; data: number[] | Uint8Array }[]) {
-  const parts: number[] = [];
-  const hdr = new Uint8Array(0x40);
-  hdr.set(Array.from('C64 CARTRIDGE   ', (c) => c.charCodeAt(0)), 0);
-  hdr.set([0, 0, 0, 0x40, 1, 0, type >> 8, type & 255, exrom, game], 0x10);
-  hdr.set(Array.from(name, (c) => c.charCodeAt(0)), 0x20);
-  parts.push(...hdr);
-  for (const c of chips) {
-    const size = c.data.length, plen = size + 16;
-    parts.push(...Array.from('CHIP', (ch) => ch.charCodeAt(0)), plen >>> 24, (plen >> 16) & 255, (plen >> 8) & 255, plen & 255,
-      0, 0, c.bank >> 8, c.bank & 255, c.load >> 8, c.load & 255, size >> 8, size & 255, ...c.data);
-  }
-  return new Uint8Array(parts);
-}
+import { buildCrt } from './crtbuild';
+export { buildCrt };
 const page8k = (code: number[], at = 0) => { const d = new Uint8Array(8192).fill(0xea); d.set(code, at); return d; };
 const CBM80 = [0x09, 0x80, 0x09, 0x80, 0xc3, 0xc2, 0xcd, 0x38, 0x30]; // vectors → $8009, "CBM80"
 
