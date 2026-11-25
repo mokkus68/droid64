@@ -20,6 +20,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Secondo drive (device 9)**, virtuale o 1541 emulato: i due 1541 emulati condividono il bus seriale come due drive veri in catena (numero di dispositivo dai ponticelli PB5-6 della VIA)
 - **Dischi G64**: superficie GCR completa con mezze tracce e sincronismi non allineati ai byte, quindi le protezioni anticopia che il D64 perde; letti e scritti dal 1541 emulato e scaricabili come `.g64`
 - **Dischi D71 (1571) e D81 (1581)** con il drive virtuale: lettura, directory, salvataggio, cancellazione, rinomina e formattazione, dischi vuoti
+- **App installabile (PWA)**: manifest, icone e service worker con cache per versione; funziona offline e segnala gli aggiornamenti
 - **Snapshot**: stato completo della macchina (CPU, memoria, VIC, SID, CIA, REU, cartuccia, 1541 emulati con testina e memoria, dischi, nastro e configurazione) salvato nel database del browser, scaricabile e riapribile da file; il ripristino controlla che le ROM siano le stesse
 - **Caricamento**: PRG, D64, D71, D81, T64 e TAP
 
@@ -27,7 +28,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository. Per il 1541 emulato serve anche la ROM del drive (16 KB, per esempio `dos1541-325302-01+901229-05.bin` nella cartella `DRIVES` di VICE).
 
 ## Uso
-Versione online: https://mokkus68.github.io/droid64/
+Versione online: https://mokkus68.github.io/droid64/ — si può installare come app (PWA) e funziona anche senza connessione.
 
 Apri `docs/index.html` in un browser: è una pagina unica, autonoma.
 
@@ -63,6 +64,7 @@ La versione (`version` in `package.json`) e la data di compilazione compaiono in
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
 | `src/vkbd.ts` | tastiera C64 a schermo |
 | `src/main.ts` | interfaccia, audio, input |
+| `pwa/` | manifest, service worker e icone dell'app installabile (copiati in `docs/` dalla build) |
 | `index.template.html` | pagina e stili; `build.mjs` ci inserisce il bundle |
 | `test/` | test headless con Node (CPU, avvio, BASIC, sprite, dischi) |
 

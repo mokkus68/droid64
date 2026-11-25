@@ -1190,6 +1190,51 @@ snapFile.addEventListener('change', async () => {
 });
 renderSnapshots();
 
+// ---------- installable app (PWA) ----------
+// Only the GitHub Pages build links a manifest: the artifact preview cannot register a service worker.
+const isPwaBuild = !!document.querySelector('link[rel="manifest"]');
+const standalone = () => window.matchMedia?.('(display-mode: standalone)').matches || (navigator as any).standalone === true;
+let installPrompt: any = null;
+function updateAppPanel() {
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const state = !isPwaBuild ? 'unavailable' : standalone() ? 'installed' : installPrompt ? 'installable' : ios ? 'ios' : 'browser';
+  $('app').dataset.state = state;
+  $('app-install').hidden = state !== 'installable';
+  const notes: Record<string, string> = {
+    unavailable: "L'app si installa dal sito: apri https://mokkus68.github.io/droid64/ nel browser.",
+    installed: "droid64 è installato come app e funziona anche senza connessione.",
+    installable: "Installa droid64 come app: si apre a tutto schermo dalla sua icona e funziona anche senza connessione.",
+    ios: "Su iPhone e iPad: tocca il pulsante Condividi di Safari e poi “Aggiungi alla schermata Home”.",
+    browser: "Il browser non offre l'installazione in questo momento. In Chrome e Edge usa il menu ⋮ → “Installa app”; su iPhone usa Safari → Condividi → “Aggiungi alla schermata Home”. La pagina funziona comunque anche senza connessione.",
+  };
+  $('app-note').textContent = notes[state];
+}
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; updateAppPanel(); });
+window.addEventListener('appinstalled', () => { installPrompt = null; updateAppPanel(); toast('droid64 installato come app'); });
+$('app-install').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  try { await installPrompt.userChoice; } catch { /* dismissed */ }
+  installPrompt = null;
+  updateAppPanel();
+});
+if (isPwaBuild && 'serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').then((reg) => {
+    const offerUpdate = (w: ServiceWorker | null) => {
+      if (!w) return;
+      const show = () => { if (w.state === 'installed' && navigator.serviceWorker.controller) $('app-update').hidden = false; };
+      w.addEventListener('statechange', show);
+      show();
+      $('app-update-btn').onclick = () => w.postMessage('update');
+    };
+    offerUpdate(reg.waiting);
+    reg.addEventListener('updatefound', () => offerUpdate(reg.installing));
+  }).catch(() => { /* not available (file://, private mode…) */ });
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if (!reloading && !$('app-update').hidden) { reloading = true; location.reload(); } });
+}
+updateAppPanel();
+
 // ---------- controls ----------
 $('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk, diskImage); toast('Reset'); screenWrap.focus(); });
 $('restore').addEventListener('click', () => { c64.restore(); screenWrap.focus(); });

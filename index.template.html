@@ -70,6 +70,7 @@ button:disabled { opacity: .45; cursor: default; }
 .vol { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; }
 .vol input { width: 96px; accent-color: var(--vic-blue); }
 
+.app-update { background: #1d2a1b; border: 1px solid #3d6b36; color: #cfe8c8; border-radius: var(--r); padding: 10px 12px; font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
 #rom-banner { background: #2c2617; border: 1px solid #5a4a22; color: #eadbb0; border-radius: var(--r); padding: 10px 12px; font-size: 13px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
 #rom-banner button { min-height: 30px; padding: 6px 10px; }
 
@@ -282,6 +283,11 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
     </div>
   </header>
 
+  <div id="app-update" class="app-update" hidden>
+    <span>È disponibile una nuova versione di droid64.</span>
+    <button type="button" id="app-update-btn" class="primary">Aggiorna ora</button>
+  </div>
+
   <div id="rom-banner">
     <span>Stai usando le ROM libere: giochi e programmi in linguaggio macchina girano, ma il BASIC è parziale.</span>
     <button type="button" onclick="document.getElementById('pick-rom').click()">Carica ROM originali</button>
@@ -449,6 +455,12 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-dev2="paddle" aria-pressed="false">Paddle</button>
         </div>
         <p id="mouse-note" hidden>Clicca sullo schermo per catturare il mouse; <kbd>Esc</kbd> lo libera. Mouse 1351: tasto sinistro = fuoco, destro = su. Paddle: il movimento orizzontale gira la paddle 1, quello verticale la paddle 2; i tasti sinistro e destro sono i loro pulsanti. GEOS usa il mouse sulla porta 1.</p>
+      </section>
+
+      <section class="panel" id="app" data-state="unavailable">
+        <h2>App</h2>
+        <p id="app-note"></p>
+        <div class="row"><button type="button" id="app-install" class="primary" hidden>Installa app</button></div>
       </section>
 
       <section class="panel" id="snapshots">

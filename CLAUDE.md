@@ -30,7 +30,7 @@ npm run typecheck
 npm run build
 ```
 
-`npm run build` aggiorna `docs/index.html` (da pubblicare) e `dist/artifact.html` (copia per l'anteprima, non versionata). Committa sempre anche `docs/index.html`, altrimenti il sito non cambia.
+`npm run build` aggiorna `docs/` (pagina, `manifest.webmanifest`, `sw.js` con la cache intestata alla versione, icone) e `dist/artifact.html` (copia per l'anteprima, non versionata). Committa sempre anche `docs/`, altrimenti il sito non cambia. Il nome della cache del service worker deriva dalla versione: per questo la versione va aumentata a ogni rilascio, altrimenti gli utenti dell'app installata non ricevono l'aggiornamento.
 
 I test sono script in `test/` da compilare con esbuild ed eseguire con Node; vedi il README. Quelli con le ROM originali o la ROM del 1541 leggono i percorsi dalle variabili `ORIG` e `DRIVEROM`: le ROM non sono nel repository e non vanno mai aggiunte, perché sono coperte da copyright.
 
