@@ -422,6 +422,7 @@ function updateTape() {
     : tape.atEnd && tape.length ? 'Fine del nastro' : tape.running ? 'In riproduzione · motore acceso' : tape.playing ? 'PLAY premuto · motore fermo' : tape.length ? 'Fermo' : 'Nastro vuoto · premi Registra e poi SAVE';
   $('tape-state').textContent = state;
   $('tape').dataset.running = tape.running ? '1' : '0';
+  $('tape-counter').textContent = String(tape.counter).padStart(3, '0');
   $('tape-play').setAttribute('aria-pressed', String(tape.playing && !tape.recording));
   $('tape-rec').setAttribute('aria-pressed', String(tape.recording));
   $('tape').dataset.rec = tape.recording ? '1' : '0';
@@ -439,6 +440,7 @@ $('tape-rec').addEventListener('click', () => {
   screenWrap.focus();
 });
 $('tape-stop').addEventListener('click', () => { tape?.stop(); screenWrap.focus(); });
+$('tape-counter-reset').addEventListener('click', () => { tape?.resetCounter(); });
 $('tape-download').addEventListener('click', () => {
   if (!tape) return;
   const name = /\.tap$/i.test(tape.name) ? tape.name : tape.name.replace(/\.[^.]*$/, '') + '.tap';

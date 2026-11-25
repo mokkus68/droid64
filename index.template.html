@@ -184,6 +184,10 @@ body.fs-open { overflow: hidden; }
 .tape-track { height: 6px; border-radius: 3px; background: #1a1714; border: 1px solid var(--case-edge); overflow: hidden; }
 #tape-bar { height: 100%; width: 0; background: var(--vic-blue); }
 #tape-state { color: var(--muted); font-size: 12px; }
+.tape-counter-row { display: flex; align-items: center; gap: 10px; }
+.counter-label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+.counter { font: 500 18px/1 var(--font-mono); letter-spacing: .18em; font-variant-numeric: tabular-nums; color: #f2ead8; background: #111; border: 1px solid #3a342d; border-radius: 3px; padding: 5px 4px 5px 8px; box-shadow: inset 0 1px 3px rgba(0,0,0,.7); }
+#tape-counter-reset { min-height: 30px; padding: 5px 10px; font-size: 12px; }
 button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; color: #fff; }
 #tape[data-rec="1"] #tape-bar { background: #c8423b; }
 #tape[data-rec="1"] .reel { border-color: #c8423b; }
@@ -359,6 +363,11 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       <section class="panel" id="tape" hidden data-running="0">
         <h2>Registratore</h2>
         <div class="tape-head"><span class="reel" aria-hidden="true"></span><span id="tape-name"></span><span id="tape-pct">0%</span></div>
+        <div class="tape-counter-row">
+          <span class="counter-label">Contagiri</span>
+          <output id="tape-counter" class="counter" aria-live="off">000</output>
+          <button type="button" id="tape-counter-reset" title="Azzera il contagiri, come il tasto sul Datasette">Azzera</button>
+        </div>
         <div class="tape-track" aria-hidden="true"><div id="tape-bar"></div></div>
         <small id="tape-state">Fermo</small>
         <div class="row">

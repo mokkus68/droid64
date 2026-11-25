@@ -19,6 +19,9 @@ export class Tape {
   /** set by the machine from the processor port (bit 5 low = motor on) */
   motor = false;
   onEdge: () => void = () => {};
+  /** C64 cycles of tape that have passed the head since the start (drives the counter) */
+  elapsed = 0;
+  private counterZero = 0;
   onEnd: () => void = () => {};
 
   constructor(img: Uint8Array, name: string) {
@@ -37,7 +40,20 @@ export class Tape {
   get running() { return this.playing && this.motor && (this.recording || !this.atEnd); }
   get recordedBytes() { return this.rec.length; }
 
-  rewind() { this.commit(); this.pos = 0; this.left = 0; }
+  rewind() { this.commit(); this.pos = 0; this.left = 0; this.elapsed = 0; }
+
+  /**
+   * Datasette counter: it follows the take-up reel, so it runs fast at the start of the tape and
+   * slower later on (same model and constants as VICE).
+   */
+  get rawCounter() {
+    const D = 1.27e-5, RMIN = 1.07e-2, V = 4.76e-2, G = 0.525;
+    const seconds = this.elapsed / 985248;
+    return G * (Math.sqrt(seconds * V / D / Math.PI + (RMIN * RMIN) / (D * D)) - RMIN / D);
+  }
+  get counter() { return ((Math.floor(this.rawCounter) - this.counterZero) % 1000 + 1000) % 1000; }
+  /** Counter reset button. */
+  resetCounter() { this.counterZero = Math.floor(this.rawCounter); }
 
   /** Press RECORD + PLAY: what the C64 writes from the current position on replaces the rest of the tape. */
   startRecording() {
@@ -111,7 +127,9 @@ export class Tape {
 
   /** Advance the tape by n cycles while the motor runs. */
   clock(n: number) {
-    if (!this.playing || !this.motor || this.recording) return;
+    if (!this.playing || !this.motor) return;
+    this.elapsed += n;
+    if (this.recording) return;
     this.left -= n;
     while (this.left <= 0) {
       if (this.atEnd) { this.playing = false; this.onEnd(); return; }

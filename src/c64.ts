@@ -232,7 +232,7 @@ export class C64 implements Bus {
       this.cycleBudget += CYCLES_PER_LINE - stolen;
       this.now += stolen;
       const drive = this.drive;
-      const tape = this.tape && this.tape.playing && this.tape.motor ? this.tape : null;
+      const tape = this.tape && this.tape.playing && this.tape.motor ? this.tape : null; // also counts while recording
       while (this.cycleBudget > 0) {
         this.instrStart = this.now;
         const c = cpu.step();
