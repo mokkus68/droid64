@@ -1,4 +1,4 @@
-# droid64 — Breadbin 64
+# droid64
 
 Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 
