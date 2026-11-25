@@ -32,6 +32,9 @@ npm install
 npm run build
 ```
 
+## Versione
+La versione (`version` in `package.json`) e la data di compilazione compaiono in alto a destra nella pagina e nel piè di pagina: la build le inserisce in automatico.
+
 ## Struttura
 | File | Contenuto |
 |---|---|

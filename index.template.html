@@ -118,6 +118,8 @@ kbd { font: 500 11px/1 var(--font-mono); border: 1px solid var(--case-edge); bor
 #toast[data-show="1"] { opacity: 1; transform: translate(-50%, 0); }
 footer { color: var(--muted); font-size: 12px; }
 footer a { color: var(--beige); }
+footer strong { color: var(--beige); font-weight: 600; }
+.version { border: 1px solid var(--case-edge); border-radius: 3px; padding: 2px 6px; color: var(--beige); }
 /* on-screen joystick */
 .touchpad { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding-top: 4px; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .dpad { position: relative; width: 148px; height: 148px; border-radius: 50%; background: radial-gradient(circle at 50% 45%, #2b2723, #171512 70%); border: 1px solid var(--case-edge); touch-action: none; cursor: pointer; }
@@ -250,6 +252,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       <span id="audio-state" data-on="0">Audio spento</span>
       <span>Velocità <span id="speed">100%</span></span>
       <span>PAL · 985 248 Hz</span>
+      <span class="version" id="version" title="Compilato il {{BUILT}}">v{{VERSION}}</span>
     </div>
   </header>
 
@@ -430,7 +433,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       </section>
     </aside>
   </div>
-  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
+  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>
