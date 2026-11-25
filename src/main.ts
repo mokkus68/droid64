@@ -7,6 +7,7 @@ import { DEMO } from './demo';
 import { buildKeyboard } from './vkbd';
 import { Cartridge } from './cartridge';
 import { blankD64 } from './d64write';
+import { Tape } from './tape';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -69,6 +70,7 @@ function rebuildMachine() {
   if (disk) c64.mountDisk(disk, diskImage);
   wireMachine();
   if (cartridge) c64.insertCartridge(cartridge);
+  if (tape) c64.insertTape(tape);
   applyDriveMode();
   updateRomStatus();
 }
@@ -138,7 +140,7 @@ function loop(now: number) {
   if (!paused) {
     pollGamepad();
     // with the emulated 1541, run flat out while the drive motor spins (loading at real speed is slow)
-    warping = turbo || (autoTurbo && !!c64.drive && c64.drive.motor);
+    warping = turbo || (autoTurbo && ((!!c64.drive && c64.drive.motor) || (!!c64.tape && c64.tape.running)));
     screenWrap.dataset.warp = warping && !turbo ? '1' : '0';
     if (warping) {
       const t0 = performance.now();
@@ -380,6 +382,48 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('.js-run')) b.addEv
 wireMachine();
 applyDriveMode();
 
+// ---------- cassette (Datasette) ----------
+let tape: Tape | null = null;
+function insertTape(t: Tape | null, autostart = false) {
+  tape = t;
+  c64.insertTape(t);
+  if (t) t.onEnd = () => toast('Fine del nastro');
+  $('tape').hidden = !t;
+  if (t) $('tape-name').textContent = t.name;
+  if (t && autostart) startTape();
+  else if (t) toast(`Nastro inserito: ${t.name}`);
+}
+/** Reset, type LOAD (+RUN) and press PLAY, as you would on a real C64. */
+function startTape() {
+  if (!tape) return;
+  startAudio();
+  c64.reset();
+  if (disk) c64.mountDisk(disk, diskImage);
+  for (let i = 0; i < 160; i++) c64.runFrame(); // boot to READY.
+  c64.sid.readPos = c64.sid.writePos;
+  tape.rewind();
+  tape.playing = true;
+  // the free Open ROMs default LOAD to device 8, so name the tape explicitly there
+  c64.typeText((romInfo.original ? 'LOAD\n' : 'LOAD"",1\n') + 'RUN\n');
+  toast(romInfo.original
+    ? `Caricamento dal nastro: ${tape.name}. Il caricamento da nastro è lento: il turbo automatico lo accelera.`
+    : `Caricamento dal nastro: ${tape.name}. Con le ROM libere, a caricamento finito scrivi RUN.`);
+  screenWrap.focus();
+}
+function updateTape() {
+  if (!tape) return;
+  $<HTMLElement>('tape-bar').style.width = `${(tape.progress * 100).toFixed(1)}%`;
+  $('tape-pct').textContent = `${Math.round(tape.progress * 100)}%`;
+  const state = tape.atEnd ? 'Fine del nastro' : tape.running ? 'In riproduzione · motore acceso' : tape.playing ? 'PLAY premuto · motore fermo' : 'Fermo';
+  $('tape-state').textContent = state;
+  $('tape').dataset.running = tape.running ? '1' : '0';
+  $('tape-play').setAttribute('aria-pressed', String(tape.playing));
+}
+$('tape-play').addEventListener('click', () => { if (tape) { tape.playing = !tape.playing; startAudio(); } screenWrap.focus(); });
+$('tape-rewind').addEventListener('click', () => { if (tape) { tape.playing = false; tape.rewind(); toast('Nastro riavvolto'); } });
+$('tape-start').addEventListener('click', () => startTape());
+$('tape-eject').addEventListener('click', () => { insertTape(null); toast('Nastro espulso'); });
+
 // ---------- cartridge ----------
 let cartridge: Cartridge | null = null;
 function showCartridge() {
@@ -400,7 +444,7 @@ $('cart-remove').addEventListener('click', () => {
 
 async function handleFiles(files: FileList | File[]) {
   const list = Array.from(files);
-  const roms = list.filter((f) => /\.(bin|rom)$/i.test(f.name) || f.size === 4096 || ((f.size === 8192 || f.size === 16384) && !/\.(prg|d64|t64|crt)$/i.test(f.name)));
+  const roms = list.filter((f) => /\.(bin|rom)$/i.test(f.name) || f.size === 4096 || ((f.size === 8192 || f.size === 16384) && !/\.(prg|d64|t64|crt|tap)$/i.test(f.name)));
   if (roms.length) { await loadRoms(roms); }
   const progs = list.filter((f) => !roms.includes(f));
   if (!progs.length) return;
@@ -408,7 +452,9 @@ async function handleFiles(files: FileList | File[]) {
   const data = new Uint8Array(await f.arrayBuffer());
   const name = f.name.toLowerCase();
   try {
-    if (name.endsWith('.crt') || String.fromCharCode(...data.subarray(0, 13)) === 'C64 CARTRIDGE') {
+    if (name.endsWith('.tap') || String.fromCharCode(...data.subarray(0, 12)) === 'C64-TAPE-RAW') {
+      insertTape(new Tape(data, f.name), true);
+    } else if (name.endsWith('.crt') || String.fromCharCode(...data.subarray(0, 13)) === 'C64 CARTRIDGE') {
       const cart = new Cartridge(data);
       startAudio();
       c64.insertCartridge(cart);
@@ -796,6 +842,7 @@ let fpsFrames = 0, fpsT = performance.now(), lastFrameCount = 0;
 function updateLeds() {
   const now = performance.now();
   updateDrive();
+  updateTape();
   if (now - fpsT > 1000) {
     const frames = framesRun - lastFrameCount;
     lastFrameCount = framesRun;

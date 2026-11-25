@@ -60,6 +60,9 @@ export class CIA {
     }
   }
 
+  /** Negative edge on the FLAG pin (cassette read, serial SRQ). */
+  flag() { this.setIrq(0x10); }
+
   /** Called at 50 Hz (per frame) to drive the TOD clock. */
   tickTOD() {
     if (this.todStopped) return;

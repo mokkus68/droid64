@@ -8,6 +8,7 @@ import { D64File, DiskImage, matchName, buildDirectoryListing, parseD64 } from '
 import { Cartridge } from './cartridge';
 import { VirtualDrive } from './vdrive';
 import { Drive1541 } from './drive1541';
+import { Tape } from './tape';
 
 export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
 
@@ -115,6 +116,8 @@ export class C64 implements Bus {
 
   /** Rebuild the CPU memory map from the processor port and the cartridge EXROM/GAME lines (PLA logic). */
   private updatePort() {
+    // cassette motor: bit 5 output low = motor on
+    if (this.tape) this.tape.motor = (this.portDdr & 0x20) !== 0 && (this.portData & 0x20) === 0;
     const bits = (this.portData | ~this.portDdr) & 7;
     const lo = bits & 1, hi = bits & 2, ch = bits & 4;
     const exrom = this.cart ? this.cart.exrom : 1;
@@ -143,7 +146,11 @@ export class C64 implements Bus {
   get kernalIn() { return this.map[0xf] === M_KERNAL; }
 
   read(addr: number): number {
-    if (addr < 2) return addr === 0 ? this.portDdr : (this.portData & this.portDdr) | (~this.portDdr & 0x17);
+    if (addr < 2) {
+      if (addr === 0) return this.portDdr;
+      const sense = this.tape?.playing ? 0 : 0x10; // cassette switch sense: 0 = a key is pressed
+      return (this.portData & this.portDdr) | (~this.portDdr & (0x07 | sense));
+    }
     switch (this.map[addr >> 12]) {
       case M_RAM: return this.ram[addr];
       case M_BASIC: return this.roms.basic[addr & 0x1fff];
@@ -216,10 +223,11 @@ export class C64 implements Bus {
     const cpu = this.cpu, vic = this.vic, cia1 = this.cia1, cia2 = this.cia2, sid = this.sid;
     for (let line = 0; line < LINES_PER_FRAME; line++) {
       const stolen = vic.startLine();
-      if (stolen) { cia1.clock(stolen); cia2.clock(stolen); }
+      if (stolen) { cia1.clock(stolen); cia2.clock(stolen); if (this.tape?.playing && this.tape.motor) this.tape.clock(stolen); }
       this.cycleBudget += CYCLES_PER_LINE - stolen;
       this.now += stolen;
       const drive = this.drive;
+      const tape = this.tape && this.tape.playing && this.tape.motor ? this.tape : null;
       while (this.cycleBudget > 0) {
         this.instrStart = this.now;
         const c = cpu.step();
@@ -227,6 +235,7 @@ export class C64 implements Bus {
         this.now += c;
         cia1.clock(c); cia2.clock(c);
         if (drive) drive.runUntil(this.now);
+        if (tape) tape.clock(c);
       }
       sid.clock(CYCLES_PER_LINE);
       vic.endLine();
@@ -294,6 +303,14 @@ export class C64 implements Bus {
   private traps = new Map<number, number>();
   /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
   serialTrapsActive = false;
+
+  // ---------- cassette ----------
+  tape: Tape | null = null;
+  insertTape(tape: Tape | null) {
+    this.tape = tape;
+    if (tape) tape.onEdge = () => this.cia1.flag();
+    this.updatePort();
+  }
 
   // ---------- real 1541 emulation ----------
   drive: Drive1541 | null = null;

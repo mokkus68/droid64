@@ -171,6 +171,18 @@ body.fs-open { overflow: hidden; }
 #cart-name { font-family: var(--font-mono); font-size: 13px; color: var(--beige); overflow-wrap: anywhere; }
 #cart-type { color: var(--muted); font-size: 12px; }
 
+/* Datasette */
+.tape-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+#tape-name { flex: 1; min-width: 0; font: 13px/1.2 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#tape-pct { font: 12px/1 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.reel { width: 18px; height: 18px; border-radius: 50%; border: 3px dotted var(--muted); flex: 0 0 auto; }
+#tape[data-running="1"] .reel { border-color: var(--vic-blue); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #tape[data-running="1"] .reel { animation: none; } }
+.tape-track { height: 6px; border-radius: 3px; background: #1a1714; border: 1px solid var(--case-edge); overflow: hidden; }
+#tape-bar { height: 100%; width: 0; background: var(--vic-blue); }
+#tape-state { color: var(--muted); font-size: 12px; }
+
 /* drive 8: green power LED when a disk is inserted, red activity LED while it is read */
 .drive-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .drive { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; height: 32px; border-radius: 4px; background: #d9cfba; border: 1px solid #9c917b; color: #3a3128; font: 600 11px/1 var(--font-mono); }
@@ -309,10 +321,10 @@ body.fs-open { overflow: hidden; }
       <section class="panel">
         <h2>Programmi</h2>
         <div class="drop">
-          <button type="button" class="primary" id="pick">Apri PRG, D64, T64 o CRT</button>
+          <button type="button" class="primary" id="pick">Apri PRG, D64, T64, TAP o CRT</button>
           <small>oppure trascina il file sulla pagina</small>
         </div>
-        <input type="file" id="file" accept=".prg,.d64,.t64,.crt,.p00,.bin,.rom" multiple hidden>
+        <input type="file" id="file" accept=".prg,.d64,.t64,.tap,.crt,.p00,.bin,.rom" multiple hidden>
         <div id="cartridge" class="cart" hidden>
           <div class="cart-label"><span class="cart-slot" aria-hidden="true"></span><div><div id="cart-name"></div><small id="cart-type"></small></div></div>
           <button type="button" id="cart-remove">Rimuovi cartuccia</button>
@@ -334,6 +346,19 @@ body.fs-open { overflow: hidden; }
         <div class="row">
           <button type="button" id="new-disk">Nuovo disco vuoto</button>
           <button type="button" id="demo">Demo BASIC (sprite e suono)</button>
+        </div>
+      </section>
+
+      <section class="panel" id="tape" hidden data-running="0">
+        <h2>Registratore</h2>
+        <div class="tape-head"><span class="reel" aria-hidden="true"></span><span id="tape-name"></span><span id="tape-pct">0%</span></div>
+        <div class="tape-track" aria-hidden="true"><div id="tape-bar"></div></div>
+        <small id="tape-state">Fermo</small>
+        <div class="row">
+          <button type="button" id="tape-start" class="primary">Avvia nastro</button>
+          <button type="button" id="tape-play" aria-pressed="false">▶ Play</button>
+          <button type="button" id="tape-rewind">⏮ Riavvolgi</button>
+          <button type="button" id="tape-eject">Espelli</button>
         </div>
       </section>
 
@@ -372,7 +397,7 @@ body.fs-open { overflow: hidden; }
           <button type="button" data-drivemode="real" aria-pressed="false" disabled>1541 emulato</button>
         </div>
         <p id="drive-note"></p>
-        <label class="check" for="autoturbo"><input type="checkbox" id="autoturbo" checked> Turbo automatico mentre il drive gira</label>
+        <label class="check" for="autoturbo"><input type="checkbox" id="autoturbo" checked> Turbo automatico durante i caricamenti (drive 1541 e nastro)</label>
       </section>
 
       <section class="panel">
@@ -398,7 +423,7 @@ body.fs-open { overflow: hidden; }
       </section>
     </aside>
   </div>
-  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
+  <footer>CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>
