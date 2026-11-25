@@ -1,0 +1,13 @@
+import { makeOrigC64, screenText } from './util';
+import { parseD64 } from '../src/media';
+import { readFileSync } from 'fs';
+const img = new Uint8Array(readFileSync(process.argv[2]));
+const c = makeOrigC64();
+c.mountDisk(parseD64(img), img);
+let warned = false;
+c.onFastloader = () => { warned = true; };
+const vd: any = c.vdrive; const origCmd = vd.command.bind(vd); vd.command = (b: number[]) => { console.log("  comando:", JSON.stringify(String.fromCharCode(...b))); origCmd(b); };
+for (let i = 0; i < 150; i++) c.runFrame();
+c.typeText('10 OPEN15,8,15,"M-W"+CHR$(0)+CHR$(5)+CHR$(1)+CHR$(96)\n20 PRINT#15,"M-E"+CHR$(0)+CHR$(5)\n30 CLOSE15:PRINT"FAT"+"TO"\nRUN\n');
+for (let i = 0; i < 200; i++) c.runFrame();
+console.log('avviso fastloader:', warned, '| schermo:', screenText(c).split('\n').filter((l) => l.trim()).slice(-2).join(' / '));

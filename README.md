@@ -11,7 +11,8 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone. Da computer lo schermo intero mostra solo lo schermo del C64, il più grande possibile
 - **Drive 8**: LED verde con disco inserito e LED rosso a ogni accesso; pulsanti per vedere la directory (`LOAD"$",8` + `LIST`) e per caricare e avviare il primo programma (`LOAD"*",8,1` + `RUN` o `SYS`)
 - **Cartucce .CRT**: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
-- **Caricamento**: PRG, D64 e T64; `LOAD` da device 8 servito direttamente dall'immagine disco (senza emulare il 1541)
+- **Drive virtuale 1541 (device 8)**: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
+- **Caricamento**: PRG, D64 e T64
 
 ## ROM
 Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository.
@@ -37,6 +38,7 @@ npm run build
 | `src/cia.ts` | CIA 6526 |
 | `src/c64.ts` | mappa di memoria, collegamento dei chip, loop del frame, caricamento |
 | `src/media.ts` | lettura di D64/T64 |
+| `src/vdrive.ts` | drive virtuale 1541 sul bus seriale |
 | `src/cartridge.ts` | cartucce .CRT e cambio di banco |
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
 | `src/vkbd.ts` | tastiera C64 a schermo |
@@ -56,7 +58,7 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 
 ## Limiti noti
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
-- Nessuna emulazione del drive 1541: i fastloader e i multiload che non usano il `LOAD` del KERNAL non funzionano
+- Il drive è virtuale, non un 1541 emulato: i fastloader che caricano codice proprio nel drive (`M-E`) non funzionano; quando un programma ci prova compare un avviso
 - Cartucce `.CRT`: non sono supportati i tipi con freezer o hardware speciale (Action Replay, Final Cartridge III, Retro Replay…)
 
 ## Licenza

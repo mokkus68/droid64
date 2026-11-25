@@ -61,8 +61,8 @@ function draw() {
 function rebuildMachine() {
   romInfo = currentRoms();
   c64 = new C64(romInfo.roms, audio ? audio.ctx.sampleRate : 44100);
-  if (disk) c64.mountDisk(disk);
-  c64.onDiskLoad = onDiskLoad;
+  if (disk) c64.mountDisk(disk, diskImage);
+  wireMachine();
   if (cartridge) c64.insertCartridge(cartridge);
   updateRomStatus();
 }
@@ -280,6 +280,7 @@ function setupTouchControls() {
 
 // ---------- files ----------
 let disk: (DiskImage & { files: D64File[] }) | null = null;
+let diskImage: Uint8Array | null = null;
 
 // ---------- drive 8: activity LED and quick commands ----------
 let driveBusyUntil = 0;
@@ -303,6 +304,17 @@ function onDiskLoad(name: string, ok: boolean, start?: number) {
   toast(ok ? `Caricato da disco: ${name}` : `File non trovato sul disco: ${name}`);
 }
 
+let fastloaderWarned = false;
+function wireMachine() {
+  c64.onDiskLoad = onDiskLoad;
+  c64.onDriveActivity = () => flashDrive();
+  c64.onFastloader = () => {
+    if (fastloaderWarned) return;
+    fastloaderWarned = true;
+    toast('Questo programma usa un caricatore veloce (fastloader) che richiede un drive 1541 emulato in modo completo: per ora non è supportato.');
+  };
+}
+
 /** Show the disk directory the C64 way: LOAD"$",8 then LIST. */
 function showDiskDirectory() {
   if (!disk) { toast('Nessun disco inserito'); return; }
@@ -322,7 +334,7 @@ function runFirstProgram() {
   c64.reset();
   for (let i = 0; i < 160; i++) c64.runFrame(); // boot to READY.
   c64.sid.readPos = c64.sid.writePos;
-  c64.mountDisk(disk);
+  c64.mountDisk(disk, diskImage);
   autoRunNext = true;
   flashDrive(400);
   c64.typeText('LOAD"*",8,1\n');
@@ -331,7 +343,7 @@ function runFirstProgram() {
 }
 for (const b of document.querySelectorAll<HTMLButtonElement>('.js-dir')) b.addEventListener('click', showDiskDirectory);
 for (const b of document.querySelectorAll<HTMLButtonElement>('.js-run')) b.addEventListener('click', runFirstProgram);
-c64.onDiskLoad = onDiskLoad;
+wireMachine();
 
 // ---------- cartridge ----------
 let cartridge: Cartridge | null = null;
@@ -345,7 +357,7 @@ function showCartridge() {
 }
 $('cart-remove').addEventListener('click', () => {
   c64.insertCartridge(null);
-  if (disk) c64.mountDisk(disk);
+  if (disk) c64.mountDisk(disk, diskImage);
   showCartridge();
   toast('Cartuccia rimossa: il C64 è stato riavviato');
   screenWrap.focus();
@@ -365,19 +377,21 @@ async function handleFiles(files: FileList | File[]) {
       const cart = new Cartridge(data);
       startAudio();
       c64.insertCartridge(cart);
-      if (disk) c64.mountDisk(disk);
+      if (disk) c64.mountDisk(disk, diskImage);
       showCartridge();
       toast(`Cartuccia inserita: ${cart.name}`);
     } else if (name.endsWith('.d64') || data.length === 174848 || data.length === 175531 || data.length === 196608) {
       disk = parseD64(data);
-      c64.mountDisk(disk);
+      diskImage = data;
+      c64.mountDisk(disk, diskImage);
       showDirectory(f.name);
       const first = disk.files.find((x) => x.data);
       toast(`Disco inserito: ${disk.files.length} file. Clicca un file per avviarlo.`);
       if (first && disk.files.filter((x) => x.data).length === 1) runFile(first);
     } else if (name.endsWith('.t64')) {
       disk = parseT64(data);
-      c64.mountDisk(disk);
+      diskImage = null;
+      c64.mountDisk(disk, diskImage);
       showDirectory(f.name);
       const first = disk.files[0];
       if (first) runFile(first);
@@ -398,7 +412,7 @@ function runFile(file: D64File) {
   if (!file.data) return;
   startAudio();
   c64.loadAndRun(file.data);
-  if (disk) c64.mountDisk(disk);
+  if (disk) c64.mountDisk(disk, diskImage);
   flashDrive();
   toast(`Avviato "${file.name}"`);
   screenWrap.focus();
@@ -424,7 +438,7 @@ function showDirectory(fileName: string) {
   }
 }
 $('eject').addEventListener('click', () => {
-  disk = null; c64.mountDisk(null); showDirectory(''); toast('Disco espulso');
+  disk = null; diskImage = null; c64.mountDisk(null); showDirectory(''); toast('Disco espulso');
 });
 
 const fileInput = $<HTMLInputElement>('file');
@@ -481,7 +495,7 @@ function updateRomStatus() {
 }
 
 // ---------- controls ----------
-$('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk); toast('Reset'); screenWrap.focus(); });
+$('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk, diskImage); toast('Reset'); screenWrap.focus(); });
 $('restore').addEventListener('click', () => { c64.restore(); screenWrap.focus(); });
 $('pause').addEventListener('click', () => {
   paused = !paused;
@@ -566,7 +580,7 @@ $('demo').addEventListener('click', () => {
     return;
   }
   c64.reset();
-  if (disk) c64.mountDisk(disk);
+  if (disk) c64.mountDisk(disk, diskImage);
   for (let i = 0; i < 160; i++) c64.runFrame();
   c64.typeText(DEMO);
   screenWrap.focus();

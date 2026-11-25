@@ -6,9 +6,11 @@ import { SID } from './sid';
 import { CIA } from './cia';
 import { D64File, DiskImage, matchName, buildDirectoryListing } from './media';
 import { Cartridge } from './cartridge';
+import { VirtualDrive } from './vdrive';
 
 export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
 
+const T_LOAD = 0, T_LISTEN = 1, T_TALK = 2, T_SECOND = 3, T_TKSA = 4, T_CIOUT = 5, T_ACPTR = 6, T_UNTLK = 7, T_UNLSN = 8;
 const M_RAM = 0, M_BASIC = 1, M_KERNAL = 2, M_IO = 3, M_CHAR = 4, M_ROML = 5, M_ROMH = 6, M_OPEN = 7;
 
 export const JOY_UP = 1, JOY_DOWN = 2, JOY_LEFT = 4, JOY_RIGHT = 8, JOY_FIRE = 16;
@@ -93,6 +95,7 @@ export class C64 implements Bus {
     for (let i = 0; i < 65536; i++) this.ram[i] = (i & 0x40) ? 0xff : 0x00;
     this.colorRam.fill(0);
     this.cart?.reset();
+    this.vdrive?.reset();
     this.portDdr = 0x2f; this.portData = 0x37; this.updatePort();
     this.cia1.reset(); this.cia2.reset();
     this.vicBank = 0;
@@ -259,14 +262,81 @@ export class C64 implements Bus {
     this.typeText(start === 0x0801 ? 'RUN\n' : `SYS${start}\n`);
   }
 
-  mountDisk(disk: (DiskImage & { files: D64File[] }) | null) {
+  vdrive: VirtualDrive | null = null;
+  onDriveActivity: (() => void) | null = null;
+  onFastloader: (() => void) | null = null;
+  private traps = new Map<number, number>();
+  /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
+  serialTrapsActive = false;
+
+  mountDisk(disk: (DiskImage & { files: D64File[] }) | null, image: Uint8Array | null = null) {
+    if (disk && this.disk === disk && this.vdrive) { this.cpu.trap = (cpu) => this.kernalTrap(cpu); return; }
     this.disk = disk;
+    this.vdrive = disk ? new VirtualDrive(disk, image) : null;
+    if (this.vdrive) {
+      this.vdrive.onActivity = () => this.onDriveActivity?.();
+      this.vdrive.onFastloader = () => this.onFastloader?.();
+    }
+    this.buildTraps();
     this.cpu.trap = disk ? (cpu) => this.kernalTrap(cpu) : null;
   }
 
+  /** Trap the KERNAL serial-bus routines: both the jump-table entries and the routines they jump to. */
+  private buildTraps() {
+    this.traps.clear();
+    const k = this.roms.kernal;
+    const entries: [number, number][] = [
+      [0xffb1, T_LISTEN], [0xffb4, T_TALK], [0xff93, T_SECOND], [0xff96, T_TKSA],
+      [0xffa8, T_CIOUT], [0xffa5, T_ACPTR], [0xffab, T_UNTLK], [0xffae, T_UNLSN],
+    ];
+    // Only a KERNAL laid out like the Commodore one (901227-xx) routes OPEN/CHKIN/CLOSE through
+    // these routines; other KERNALs (e.g. the free Open ROMs) keep just the LOAD trap.
+    const ORIGINAL: Record<number, number> = { 0xffb1: 0xed0c, 0xffb4: 0xed09, 0xff93: 0xedb9, 0xff96: 0xedc7, 0xffa8: 0xeddd, 0xffa5: 0xee13, 0xffab: 0xedef, 0xffae: 0xedfe };
+    const target = (a: number) => (k[a - 0xe000] === 0x4c ? k[a - 0xe000 + 1] | (k[a - 0xe000 + 2] << 8) : -1);
+    this.serialTrapsActive = entries.every(([a]) => target(a) === ORIGINAL[a]);
+    if (this.serialTrapsActive) {
+      for (const [addr, kind] of entries) {
+        this.traps.set(addr, kind);
+        this.traps.set(target(addr), kind);
+      }
+    }
+    this.traps.set(0xffd5, T_LOAD);
+  }
+
   /** Intercept KERNAL LOAD ($FFD5) for device 8 and serve files from the mounted image. */
+  private rts(cpu: CPU) {
+    const lo = this.read(0x100 | ((cpu.s + 1) & 0xff)), hi = this.read(0x100 | ((cpu.s + 2) & 0xff));
+    cpu.s = (cpu.s + 2) & 0xff;
+    cpu.pc = (((hi << 8) | lo) + 1) & 0xffff;
+  }
+
+  private serialTrap(cpu: CPU, kind: number): boolean {
+    const d = this.vdrive!;
+    switch (kind) {
+      case T_LISTEN: if (!d.listen(cpu.a)) return false; break;
+      case T_TALK: if (!d.talk(cpu.a)) return false; break;
+      case T_SECOND: if (!d.active) return false; d.second(cpu.a); break;
+      case T_TKSA: if (!d.active) return false; d.tksa(cpu.a); break;
+      case T_CIOUT: if (!d.active) return false; d.ciout(cpu.a); break;
+      case T_UNLSN: if (!d.active) return false; d.unlisten(); break;
+      case T_UNTLK: if (!d.active) return false; d.untalk(); break;
+      case T_ACPTR: {
+        if (!d.active) return false;
+        const [b, st] = d.acptr();
+        cpu.a = b; cpu.z = b === 0 ? 1 : 0; cpu.n = b >> 7;
+        this.ram[0x90] |= st;
+        break;
+      }
+    }
+    cpu.c = 0;
+    this.rts(cpu);
+    return true;
+  }
+
   private kernalTrap(cpu: CPU): boolean {
-    if (cpu.pc !== 0xffd5 || !this.kernalIn || !this.disk) return false;
+    const kind = this.traps.get(cpu.pc);
+    if (kind === undefined || !this.disk || cpu.pc < 0xe000 || !this.kernalIn) return false;
+    if (kind !== T_LOAD) return this.serialTrap(cpu, kind);
     const ram = this.ram;
     if (ram[0xba] !== 8) return false;
     const nameLen = ram[0xb7];
@@ -286,6 +356,7 @@ export class C64 implements Bus {
       const file = this.disk.files.find((f) => f.data && (pat.length === 0 || matchName(pat, f.rawName)));
       if (file) { data = file.data; label = file.name; }
     }
+    this.onDriveActivity?.();
     // emulate RTS from the JSR $FFD5
     const lo = this.read(0x100 | ((cpu.s + 1) & 0xff)), hi = this.read(0x100 | ((cpu.s + 2) & 0xff));
     cpu.s = (cpu.s + 2) & 0xff;
