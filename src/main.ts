@@ -72,6 +72,7 @@ function rebuildMachine() {
   if (cartridge) c64.insertCartridge(cartridge);
   if (tape) c64.insertTape(tape);
   c64.setReu(reuSize);
+  applyPortDevices();
   applyDriveMode();
   updateRomStatus();
 }
@@ -194,7 +195,66 @@ screenWrap.addEventListener('keyup', (e) => {
 });
 screenWrap.addEventListener('blur', () => { keyboard.releaseAll(); keyJoy = 0; applyJoy(); screenWrap.dataset.focus = '0'; });
 screenWrap.addEventListener('focus', () => { screenWrap.dataset.focus = '1'; });
-screenWrap.addEventListener('pointerdown', () => { startAudio(); setTimeout(updateAudioStatus, 100); screenWrap.focus(); });
+screenWrap.addEventListener('pointerdown', () => {
+  startAudio(); setTimeout(updateAudioStatus, 100); screenWrap.focus();
+  // a mouse or paddles are plugged in: capture the pointer so it can move freely
+  if (usesMouse() && document.pointerLockElement !== screenWrap) {
+    try { (screenWrap.requestPointerLock as () => Promise<void> | void)()?.catch?.(() => {}); } catch { /* not available */ }
+  }
+});
+
+// ---------- mouse 1351 and paddles ----------
+type PortDev = 'joystick' | 'mouse' | 'paddle';
+const usesMouse = () => c64.portDevice[1] !== 'joystick' || c64.portDevice[2] !== 'joystick';
+const savedDev = (n: 1 | 2): PortDev => { const v = store.get('c64.port' + n); return v === 'mouse' || v === 'paddle' ? v : 'joystick'; };
+let portDev: [PortDev, PortDev] = [savedDev(1), savedDev(2)];
+function applyPortDevices() {
+  c64.portDevice[1] = portDev[0];
+  c64.portDevice[2] = portDev[1];
+  for (const n of [1, 2] as const) {
+    for (const b of document.querySelectorAll<HTMLButtonElement>(`[data-dev${n}]`)) b.setAttribute('aria-pressed', String(b.dataset[`dev${n}`] === portDev[n - 1]));
+  }
+  $('mouse-note').hidden = !usesMouse();
+}
+for (const n of [1, 2] as const) {
+  for (const b of document.querySelectorAll<HTMLButtonElement>(`[data-dev${n}]`)) b.addEventListener('click', () => {
+    portDev[n - 1] = b.dataset[`dev${n}`] as PortDev;
+    store.set('c64.port' + n, portDev[n - 1]);
+    applyPortDevices();
+    const name = { joystick: 'joystick', mouse: 'mouse 1351', paddle: 'paddle' }[portDev[n - 1]];
+    toast(`Porta ${n}: ${name}${portDev[n - 1] === 'joystick' ? '' : '. Clicca sullo schermo per catturare il mouse.'}`);
+  });
+}
+const MOUSE_SCALE = 0.5;   // 1351 counts per screen pixel of mouse movement
+let mouseFrac = [0, 0];
+function onMouseMove(e: MouseEvent) {
+  if (!usesMouse() || document.pointerLockElement !== screenWrap) return;
+  const fx = mouseFrac[0] + e.movementX * MOUSE_SCALE, fy = mouseFrac[1] + e.movementY * MOUSE_SCALE;
+  const dx = Math.trunc(fx), dy = Math.trunc(fy);
+  mouseFrac = [fx - dx, fy - dy];
+  c64.mouseX += dx; c64.mouseY += dy;
+  // paddles: turning right lowers the value, like the real potentiometer
+  const clamp = (v: number) => Math.max(0, Math.min(255, v));
+  c64.paddle[0] = clamp(c64.paddle[0] - dx);
+  c64.paddle[1] = clamp(c64.paddle[1] - dy);
+}
+document.addEventListener('mousemove', onMouseMove);
+screenWrap.addEventListener('mousedown', (e) => {
+  if (!usesMouse() || document.pointerLockElement !== screenWrap) return;
+  const bit = e.button === 2 ? 2 : e.button === 0 ? 1 : 0;
+  c64.mouseButtons |= bit; c64.paddleButtons |= bit;
+  e.preventDefault();
+});
+document.addEventListener('mouseup', (e) => {
+  const bit = e.button === 2 ? 2 : e.button === 0 ? 1 : 0;
+  c64.mouseButtons &= ~bit; c64.paddleButtons &= ~bit;
+});
+screenWrap.addEventListener('contextmenu', (e) => { if (usesMouse()) e.preventDefault(); });
+document.addEventListener('pointerlockchange', () => {
+  const on = document.pointerLockElement === screenWrap;
+  screenWrap.dataset.mouse = on ? '1' : '0';
+  if (!on) { c64.mouseButtons = 0; c64.paddleButtons = 0; }
+});
 screenWrap.addEventListener('paste', (e) => {
   const text = e.clipboardData?.getData('text');
   if (text) { c64.typeText(text); toast('Testo incollato nel C64'); e.preventDefault(); }
@@ -951,6 +1011,7 @@ for (let i = 0; i < 16; i++) {
 }
 
 setJoyPort(joyPort);
+applyPortDevices();
 setupTouchControls();
 updateRomStatus();
 updateAudioStatus();

@@ -52,6 +52,9 @@ header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; ju
 #screen-wrap[data-paused="1"] .paused-badge { display: block; }
 .typing-badge { position: absolute; top: 12px; left: 12px; font-family: var(--font-mono); font-size: 11px; background: var(--vic-blue); color: #fff; padding: 2px 8px; border-radius: 3px; display: none; }
 #screen-wrap[data-typing="1"] .typing-badge { display: block; }
+.mouse-badge { position: absolute; bottom: 12px; left: 12px; font-family: var(--font-mono); font-size: 11px; background: rgba(12,11,10,.85); color: var(--beige); padding: 3px 8px; border-radius: 3px; display: none; pointer-events: none; }
+#screen-wrap[data-mouse="1"] .mouse-badge { display: block; }
+#screen-wrap[data-mouse="1"] .hint { display: none; }
 
 .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .toolbar .spacer { flex: 1; }
@@ -276,6 +279,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         <span class="paused-badge">PAUSA</span>
         <span class="warp-badge">caricamento · turbo</span>
         <span class="typing-badge">digitazione…</span>
+        <span class="mouse-badge">mouse catturato · Esc per liberarlo</span>
         <span class="fs-overlay" aria-hidden="false">
           <span class="drive" data-disk="0" data-busy="0" title="Drive 8"><span class="pwr" aria-hidden="true"></span><span class="act" aria-hidden="true"></span><span class="lbl">8</span></span>
           <button type="button" class="fs-exit-float">Esci (Esc)</button>
@@ -393,6 +397,19 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-joy="2" aria-pressed="true">Porta 2</button>
         </div>
         <p>Frecce per muovere, <kbd>Ctrl</kbd> o <kbd>Alt</kbd> per sparare. Funziona anche un gamepad. Su telefono usa il joystick a schermo sotto l'immagine. Se un gioco non risponde, prova l'altra porta.</p>
+        <div class="field-label">Dispositivo sulla porta 1</div>
+        <div class="seg" role="group" aria-label="Dispositivo porta 1">
+          <button type="button" data-dev1="joystick" aria-pressed="true">Joystick</button>
+          <button type="button" data-dev1="mouse" aria-pressed="false">Mouse 1351</button>
+          <button type="button" data-dev1="paddle" aria-pressed="false">Paddle</button>
+        </div>
+        <div class="field-label">Dispositivo sulla porta 2</div>
+        <div class="seg" role="group" aria-label="Dispositivo porta 2">
+          <button type="button" data-dev2="joystick" aria-pressed="true">Joystick</button>
+          <button type="button" data-dev2="mouse" aria-pressed="false">Mouse 1351</button>
+          <button type="button" data-dev2="paddle" aria-pressed="false">Paddle</button>
+        </div>
+        <p id="mouse-note" hidden>Clicca sullo schermo per catturare il mouse; <kbd>Esc</kbd> lo libera. Mouse 1351: tasto sinistro = fuoco, destro = su. Paddle: il movimento orizzontale gira la paddle 1, quello verticale la paddle 2; i tasti sinistro e destro sono i loro pulsanti. GEOS usa il mouse sulla porta 1.</p>
       </section>
 
       <section class="panel" id="expansions">

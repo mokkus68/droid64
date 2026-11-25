@@ -70,16 +70,16 @@ export class C64 implements Bus {
     // CIA1: keyboard + joysticks
     this.cia1.readPortA = (c) => {
       let v = (c.pra | ~c.ddra) & 0xff;
-      const pb = (c.prb | ~c.ddrb) & ~this.joy1 & 0xff;
+      const pb = (c.prb | ~c.ddrb) & ~this.portBits(1) & 0xff;
       // reverse scan: rows driven low pull columns low
       for (let col = 0; col < 8; col++) if (this.keys[col] & ~pb) v &= ~(1 << col);
-      return v & ~this.joy2;
+      return v & ~this.portBits(2);
     };
     this.cia1.readPortB = (c) => {
       let v = (c.prb | ~c.ddrb) & 0xff;
-      const pa = (c.pra | ~c.ddra) & ~this.joy2 & 0xff;
+      const pa = (c.pra | ~c.ddra) & ~this.portBits(2) & 0xff;
       for (let col = 0; col < 8; col++) if (!(pa & (1 << col))) v &= ~this.keys[col];
-      return v & ~this.joy1;
+      return v & ~this.portBits(1);
     };
     // CIA2: VIC bank + serial bus (no devices attached: lines read back as released)
     this.cia2.readPortA = (c) => {
@@ -194,7 +194,11 @@ export class C64 implements Bus {
   private ioRead(addr: number): number {
     switch ((addr >> 8) & 0xf) {
       case 0: case 1: case 2: case 3: return this.vic.read(addr);
-      case 4: case 5: case 6: case 7: return this.sid.read(addr);
+      case 4: case 5: case 6: case 7: {
+        const r = addr & 0x1f;
+        if (r === 0x19 || r === 0x1a) return this.readPot(r === 0x19 ? 0 : 1);
+        return this.sid.read(addr);
+      }
       case 8: case 9: case 0xa: case 0xb: return (this.colorRam[addr & 0x3ff] & 0x0f) | 0xf0;
       case 0xc: return this.cia1.read(addr);
       case 0xd:
@@ -316,6 +320,38 @@ export class C64 implements Bus {
   private traps = new Map<number, number>();
   /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
   serialTrapsActive = false;
+
+  // ---------- control port devices: mouse 1351 and paddles ----------
+  /** what is plugged into control ports 1 and 2 (index 1 and 2) */
+  portDevice: ('joystick' | 'mouse' | 'paddle')[] = ['joystick', 'joystick', 'joystick'];
+  mouseX = 0; mouseY = 0;           // accumulated mouse position (1351 counts)
+  mouseButtons = 0;                 // bit 0 left, bit 1 right
+  paddle = [128, 128];              // paddle 1 and 2 positions (0-255)
+  paddleButtons = 0;                // bit 0 paddle 1, bit 1 paddle 2
+
+  /** Joystick-line bits (active high) for a port: joystick plus mouse/paddle buttons. */
+  private portBits(port: 1 | 2): number {
+    let v = port === 1 ? this.joy1 : this.joy2;
+    const dev = this.portDevice[port];
+    if (dev === 'mouse') v |= (this.mouseButtons & 1 ? 0x10 : 0) | (this.mouseButtons & 2 ? 0x01 : 0);
+    else if (dev === 'paddle') v |= (this.paddleButtons & 1 ? 0x04 : 0) | (this.paddleButtons & 2 ? 0x08 : 0);
+    return v;
+  }
+
+  /** SID POTX/POTY: CIA1 port A bits 6/7 choose which control port is connected. */
+  private readPot(axis: 0 | 1): number {
+    const pa = (this.cia1.pra | ~this.cia1.ddra) & 0xff;
+    const port = pa & 0x40 ? 1 : pa & 0x80 ? 2 : 0;
+    if (!port) return 0xff;
+    const dev = this.portDevice[port];
+    if (dev === 'mouse') {
+      // 1351 proportional mode: position modulo 64 in bits 1-6; Y grows when moving up
+      const pos = axis === 0 ? this.mouseX : -this.mouseY;
+      return (pos << 1) & 0x7e;
+    }
+    if (dev === 'paddle') return this.paddle[axis] & 0xff;
+    return 0xff;
+  }
 
   // ---------- RAM Expansion Unit ----------
   reu: REU | null = null;
