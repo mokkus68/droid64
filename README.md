@@ -17,7 +17,8 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Nastri .TAP** (v0 e v1): registratore emulato a livello di impulsi sul pin FLAG del CIA1, con tasto PLAY e motore sulla porta `$01`, quindi funzionano sia il caricamento del KERNAL sia i turbo loader. Avvio automatico, turbo mentre il motore gira (disattivabile nel pannello del registratore per avere la velocità reale), contagiri del Datasette (non lineare come la bobina vera) con tasto di azzeramento. Salvataggio su nastro: con RECORD premuto gli impulsi che il C64 scrive (bit 3 di `$01`) vengono registrati in formato TAP, scaricabili e salvati nel browser
 - **Mouse 1351 e paddle** su entrambe le porte: letti dal SID (`POTX`/`POTY`) con la selezione della porta dal CIA1; il mouse del browser viene catturato sullo schermo (Pointer Lock)
 - **REU** 1700 (128 KB), 1764 (256 KB) e 1750 (512 KB): registri a `$DF00`, trasferimenti stash, fetch, swap e verify, autoload, indirizzi fissi, interrupt e avvio con scrittura su `$FF00`
-- **Caricamento**: PRG, D64, T64 e TAP
+- **Dischi D71 (1571) e D81 (1581)** con il drive virtuale: lettura, directory, salvataggio, cancellazione, rinomina e formattazione, dischi vuoti
+- **Caricamento**: PRG, D64, D71, D81, T64 e TAP
 
 ## ROM
 Di base usa le ROM libere [MEGA65 Open ROMs](https://github.com/MEGA65/open-roms) (LGPL-3.0), incluse in `src/roms.ts`. Il loro BASIC è incompleto: per il BASIC V2 completo carica dall'interfaccia le ROM originali (basic, kernal, chargen), che restano salvate solo nel browser. Le ROM originali **non** sono incluse in questo repository. Per il 1541 emulato serve anche la ROM del drive (16 KB, per esempio `dos1541-325302-01+901229-05.bin` nella cartella `DRIVES` di VICE).
@@ -50,6 +51,7 @@ La versione (`version` in `package.json`) e la data di compilazione compaiono in
 | `src/drive1541.ts` | 1541 emulato: CPU, memoria, meccanica, bus seriale |
 | `src/via.ts` | VIA 6522 |
 | `src/gcr.ts` | conversione D64 ↔ GCR |
+| `src/geometry.ts` | geometrie D64, D71 e D81 (tracce, settori, BAM) |
 | `src/d64write.ts` | scrittura su D64: BAM, directory, cancellazione, rinomina, formattazione |
 | `src/reu.ts` | espansione di memoria REU |
 | `src/tape.ts` | registratore (Datasette) da file .TAP |

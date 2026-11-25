@@ -93,6 +93,9 @@ body[data-drag="1"] .drop { border-color: var(--vic-blue); background: rgba(112,
 
 #directory { display: grid; gap: 8px; }
 .saved { display: grid; gap: 6px; }
+.new-disk { display: inline-flex; gap: 0; }
+.new-disk button { border-radius: var(--r) 0 0 var(--r); }
+.new-disk select { background: var(--case); color: var(--beige); border: 1px solid var(--case-edge); border-left: 0; border-radius: 0 var(--r) var(--r) 0; padding: 0 8px; font: 12px var(--font-mono); min-height: 36px; }
 .saved small { color: var(--muted); font-size: 12px; }
 #saved-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 #saved-list li { display: flex; gap: 6px; }
@@ -340,10 +343,10 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       <section class="panel">
         <h2>Programmi</h2>
         <div class="drop">
-          <button type="button" class="primary" id="pick">Apri PRG, D64, T64, TAP o CRT</button>
+          <button type="button" class="primary" id="pick">Apri PRG, D64/D71/D81, T64, TAP o CRT</button>
           <small>oppure trascina il file sulla pagina</small>
         </div>
-        <input type="file" id="file" accept=".prg,.d64,.t64,.tap,.crt,.p00,.bin,.rom" multiple hidden>
+        <input type="file" id="file" accept=".prg,.d64,.d71,.d81,.t64,.tap,.crt,.p00,.bin,.rom" multiple hidden>
         <div id="cartridge" class="cart" hidden>
           <div class="cart-label"><span class="cart-slot" aria-hidden="true"></span><div><div id="cart-name"></div><small id="cart-type"></small></div></div>
           <button type="button" class="js-freeze freeze" hidden>Freeze</button>
@@ -364,7 +367,14 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <ul id="saved-list"></ul>
         </div>
         <div class="row">
-          <button type="button" id="new-disk">Nuovo disco vuoto</button>
+          <span class="new-disk">
+            <button type="button" id="new-disk">Nuovo disco vuoto</button>
+            <select id="new-disk-kind" aria-label="Formato del disco vuoto">
+              <option value="d64">D64 · 1541</option>
+              <option value="d71">D71 · 1571</option>
+              <option value="d81">D81 · 1581</option>
+            </select>
+          </span>
           <button type="button" id="new-tape">Nuovo nastro vuoto</button>
           <button type="button" id="demo">Demo BASIC (sprite e suono)</button>
         </div>

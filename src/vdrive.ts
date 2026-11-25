@@ -6,6 +6,7 @@
 
 import { D64File, DiskImage, matchName, buildDirectoryListing, parseD64 } from './media';
 import { writeFile, scratch, rename, format, FileType } from './d64write';
+import { geometryFor } from './geometry';
 
 type Disk = DiskImage & { files: D64File[] };
 
@@ -195,11 +196,9 @@ export class VirtualDrive {
 
   private readSector(t: number, s: number): Uint8Array | null {
     if (!this.image) return null;
-    const spt = (tr: number) => (tr <= 17 ? 21 : tr <= 24 ? 19 : tr <= 30 ? 18 : 17);
-    if (t < 1 || t > 40 || s >= spt(t)) return null;
-    let off = 0;
-    for (let i = 1; i < t; i++) off += spt(i) * 256;
-    off += s * 256;
+    const g = geometryFor(this.image);
+    if (t < 1 || t > g.tracks || s >= g.spt(t)) return null;
+    const off = g.offset(t, s);
     if (off + 256 > this.image.length) return null;
     return this.image.subarray(off, off + 256);
   }

@@ -1,54 +1,30 @@
 // Writing to a D64 image in place: BAM allocation, directory entries, scratch, rename, format.
 
-import { sectorsPerTrack } from './gcr';
+import { geometryFor, blankDisk, freeBlocks as geomFree, Geometry } from './geometry';
 
 export const D64_SIZE = 174848;
 
-const offset = (t: number, s: number) => {
-  let o = 0;
-  for (let i = 1; i < t; i++) o += sectorsPerTrack(i) * 256;
-  return o + s * 256;
-};
-const BAM = offset(18, 0);
 const pad16 = (name: Uint8Array) => { const o = new Uint8Array(16).fill(0xa0); o.set(name.subarray(0, 16)); return o; };
-const tracksOf = (img: Uint8Array) => (img.length >= 196608 ? 40 : 35);
 
-// ---- BAM ----
-function isFree(img: Uint8Array, t: number, s: number) {
-  if (t > 35) return false; // the standard BAM covers 35 tracks
-  return (img[BAM + t * 4 + 1 + (s >> 3)] & (1 << (s & 7))) !== 0;
-}
-function allocate(img: Uint8Array, t: number, s: number) {
-  const o = BAM + t * 4;
-  if (!isFree(img, t, s)) return;
-  img[o + 1 + (s >> 3)] &= ~(1 << (s & 7));
-  img[o]--;
-}
-function release(img: Uint8Array, t: number, s: number) {
-  if (t < 1 || t > 35 || s >= sectorsPerTrack(t)) return;
-  const o = BAM + t * 4;
-  if (isFree(img, t, s)) return;
-  img[o + 1 + (s >> 3)] |= 1 << (s & 7);
-  img[o]++;
-}
-export function blocksFree(img: Uint8Array) {
-  let n = 0;
-  for (let t = 1; t <= 35; t++) if (t !== 18) n += img[BAM + t * 4];
-  return n;
-}
+export function blocksFree(img: Uint8Array) { return geomFree(img); }
 
-/** Next free sector like the 1541 DOS: tracks closest to the directory first, interleave 10. */
-function nextFree(img: Uint8Array, lastT: number, lastS: number): [number, number] | null {
+/** Next free sector like the CBM DOS: tracks closest to the directory first, with the drive's interleave. */
+function nextFree(img: Uint8Array, g: Geometry, lastT: number, lastS: number): [number, number] | null {
   const order: number[] = [];
-  if (lastT && lastT !== 18) order.push(lastT);
-  for (let d = 1; d <= 17; d++) for (const t of [18 - d, 18 + d]) if (t >= 1 && t <= 35 && !order.includes(t)) order.push(t);
+  if (lastT && !g.reserved.includes(lastT)) order.push(lastT);
+  const all: number[] = [];
+  for (let t = 1; t <= g.tracks; t++) if (!g.reserved.includes(t)) all.push(t);
+  // side 1 first (by distance from the directory track), then side 2 of a D71
+  const side = (t: number) => (g.kind === 'd71' && t > 35 ? 1 : 0);
+  all.sort((x, y) => side(x) - side(y) || Math.abs(x - g.dirTrack - side(x) * 35) - Math.abs(y - g.dirTrack - side(y) * 35) || x - y);
+  for (const t of all) if (!order.includes(t)) order.push(t);
   for (const t of order) {
-    const n = sectorsPerTrack(t);
-    if (img[BAM + t * 4] === 0) continue;
-    const start = t === lastT ? (lastS + 10) % n : 0;
+    const n = g.spt(t);
+    if (g.freeOnTrack(img, t) === 0) continue;
+    const start = t === lastT ? (lastS + g.interleave) % n : 0;
     for (let i = 0; i < n; i++) {
       const s = (start + i) % n;
-      if (isFree(img, t, s)) return [t, s];
+      if (g.isFree(img, t, s)) return [t, s];
     }
   }
   return null;
@@ -57,11 +33,12 @@ function nextFree(img: Uint8Array, lastT: number, lastS: number): [number, numbe
 // ---- directory ----
 interface DirSlot { off: number; }
 function* dirEntries(img: Uint8Array): Generator<DirSlot> {
-  let t = 18, s = 1;
+  const g = geometryFor(img);
+  let t = g.dirTrack, s = g.firstDirSector;
   const seen = new Set<string>();
-  while (t === 18 && !seen.has(`${t}/${s}`)) {
+  while (t === g.dirTrack && s < g.spt(t) && !seen.has(`${t}/${s}`)) {
     seen.add(`${t}/${s}`);
-    const o = offset(t, s);
+    const o = g.offset(t, s);
     for (let e = 0; e < 8; e++) yield { off: o + e * 32 };
     t = img[o]; s = img[o + 1];
   }
@@ -85,30 +62,32 @@ function findEntry(img: Uint8Array, name: Uint8Array): number {
   return -1;
 }
 function freeChain(img: Uint8Array, t: number, s: number) {
+  const g = geometryFor(img);
   const seen = new Set<string>();
-  while (t >= 1 && t <= tracksOf(img) && !seen.has(`${t}/${s}`)) {
+  while (t >= 1 && t <= g.tracks && s < g.spt(t) && !seen.has(`${t}/${s}`)) {
     seen.add(`${t}/${s}`);
-    const o = offset(t, s);
+    const o = g.offset(t, s);
     const nt = img[o], ns = img[o + 1];
-    release(img, t, s);
+    g.release(img, t, s);
     t = nt; s = ns;
     if (t === 0) break;
   }
 }
 
-/** Get a free directory slot, extending the directory on track 18 if needed. */
+/** Get a free directory slot, extending the directory on the directory track if needed. */
 function freeSlot(img: Uint8Array): number {
+  const g = geometryFor(img);
   let last = -1;
   for (const { off } of dirEntries(img)) { if (img[off + 2] === 0) return off; last = off; }
-  // all directory sectors are full: chain a new one on track 18
-  const lastSector = (last - offset(18, 0)) >> 8;
-  for (let i = 1; i < sectorsPerTrack(18); i++) {
-    const s = (lastSector + 3 * i) % sectorsPerTrack(18);
-    if (s === 0 || !isFree(img, 18, s)) continue;
-    allocate(img, 18, s);
-    const prev = offset(18, lastSector);
-    img[prev] = 18; img[prev + 1] = s;
-    const o = offset(18, s);
+  const lastSector = ((last - g.offset(g.dirTrack, 0)) >> 8);
+  const n = g.spt(g.dirTrack);
+  for (let i = 1; i < n; i++) {
+    const s = (lastSector + (g.kind === 'd81' ? 1 : 3) * i) % n;
+    if (!g.isFree(img, g.dirTrack, s)) continue;
+    g.allocate(img, g.dirTrack, s);
+    const prev = g.offset(g.dirTrack, lastSector);
+    img[prev] = g.dirTrack; img[prev + 1] = s;
+    const o = g.offset(g.dirTrack, s);
     img.fill(0, o, o + 256);
     img[o + 1] = 0xff;
     return o;
@@ -127,6 +106,7 @@ export function writeFile(img: Uint8Array, name: Uint8Array, type: FileType, dat
     freeChain(img, img[existing + 3], img[existing + 4]);
     img.fill(0, existing + 2, existing + 32);
   }
+  const g = geometryFor(img);
   const blocks = Math.max(1, Math.ceil(data.length / 254));
   if (blocks > blocksFree(img)) return 72;
   const slot = freeSlot(img);
@@ -134,13 +114,13 @@ export function writeFile(img: Uint8Array, name: Uint8Array, type: FileType, dat
   const chain: [number, number][] = [];
   let lt = 0, ls = 0;
   for (let i = 0; i < blocks; i++) {
-    const n = nextFree(img, lt, ls);
-    if (!n) { for (const [t, s] of chain) release(img, t, s); return 72; }
-    allocate(img, n[0], n[1]);
+    const n = nextFree(img, g, lt, ls);
+    if (!n) { for (const [t, s] of chain) g.release(img, t, s); return 72; }
+    g.allocate(img, n[0], n[1]);
     chain.push(n); [lt, ls] = n;
   }
   chain.forEach(([t, s], i) => {
-    const o = offset(t, s);
+    const o = g.offset(t, s);
     const part = data.subarray(i * 254, i * 254 + 254);
     img.fill(0, o, o + 256);
     img.set(part, o + 2);
@@ -178,25 +158,9 @@ export function rename(img: Uint8Array, newName: Uint8Array, oldName: Uint8Array
 
 /** Format (N:name,id) — a new empty disk in place. */
 export function format(img: Uint8Array, name: Uint8Array, id: Uint8Array) {
-  img.fill(0);
-  const b = BAM;
-  img[b] = 18; img[b + 1] = 1; img[b + 2] = 0x41;
-  for (let t = 1; t <= 35; t++) {
-    const n = sectorsPerTrack(t);
-    img[b + t * 4] = n;
-    for (let s = 0; s < n; s++) img[b + t * 4 + 1 + (s >> 3)] |= 1 << (s & 7);
-  }
-  img.fill(0xa0, b + 0x90, b + 0xab);
-  img.set(pad16(name), b + 0x90);
-  img[b + 0xa2] = id[0] ?? 0x30; img[b + 0xa3] = id[1] ?? 0x30;
-  img[b + 0xa5] = 0x32; img[b + 0xa6] = 0x41; // "2A"
-  allocate(img, 18, 0); allocate(img, 18, 1);
-  const d = offset(18, 1);
-  img[d + 1] = 0xff;
+  geometryFor(img).format(img, name, id);
 }
 
 export function blankD64(name = 'DISCO NUOVO', id = '01'): Uint8Array {
-  const img = new Uint8Array(D64_SIZE);
-  format(img, Uint8Array.from(name.toUpperCase(), (c) => c.charCodeAt(0)), Uint8Array.from(id.toUpperCase(), (c) => c.charCodeAt(0)));
-  return img;
+  return blankDisk('d64', name, id);
 }

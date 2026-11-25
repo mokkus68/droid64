@@ -6,7 +6,7 @@ import { OPEN_BASIC, OPEN_KERNAL, OPEN_CHARGEN } from './roms';
 import { DEMO } from './demo';
 import { buildKeyboard } from './vkbd';
 import { Cartridge } from './cartridge';
-import { blankD64 } from './d64write';
+import { blankDisk, isDiskImageSize, geometryFor, DiskKind } from './geometry';
 import { Tape, blankTap } from './tape';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -580,7 +580,7 @@ async function handleFiles(files: FileList | File[]) {
       if (disk) c64.mountDisk(disk, diskImage);
       showCartridge();
       toast(`Cartuccia inserita: ${cart.name}`);
-    } else if (name.endsWith('.d64') || data.length === 174848 || data.length === 175531 || data.length === 196608) {
+    } else if (/\.(d64|d71|d81)$/.test(name) || isDiskImageSize(data.length)) {
       const saved = loadSavedDisk(f.name);
       originalImage = data.slice();
       const img = saved && saved.length === data.length ? saved : data;
@@ -662,13 +662,22 @@ function loadSavedDisk(name: string): Uint8Array | null {
   try { return b64ToBytes(b64); } catch { return null; }
 }
 
-function insertD64(img: Uint8Array, name: string, modified: boolean) {
+/** Insert a disk image in drive 8; returns true if it had to switch from the 1541 to the virtual drive. */
+function insertD64(img: Uint8Array, name: string, modified: boolean): boolean {
+  const kind = geometryFor(img).kind;
+  const switched = kind !== 'd64' && !!c64.drive;
+  if (switched) {
+    // the emulated drive is a 1541: D71/D81 need the virtual drive
+    setTrueDrive(false);
+    toast(`Il 1541 emulato legge solo dischi D64: per questo ${kind.toUpperCase()} uso il drive virtuale. Puoi tornare al 1541 dal pannello Drive 8.`);
+  }
   disk = parseD64(img);
   diskImage = img;
   diskName = name;
   diskModified = modified;
   c64.mountDisk(disk, diskImage);
   showDirectory(name);
+  return switched;
 }
 
 /** Called whenever the emulated drive writes to the mounted disk. */
@@ -694,7 +703,8 @@ function onDiskSave(name: string, code: number) {
 $('download-disk').addEventListener('click', () => {
   if (!diskImage) return;
   c64.drive?.flushWrites();
-  const name = /\.d64$/i.test(diskName) ? diskName : diskName.replace(/\.[^.]*$/, '') + '.d64';
+  const ext = diskImage ? geometryFor(diskImage).kind : 'd64';
+  const name = /\.d(64|71|81)$/i.test(diskName) ? diskName : diskName.replace(/\.[^.]*$/, '') + '.' + ext;
   try {
     const url = URL.createObjectURL(new Blob([diskImage], { type: 'application/octet-stream' }));
     const a = document.createElement('a');
@@ -720,13 +730,15 @@ $('revert-disk').addEventListener('click', () => {
 $('new-disk').addEventListener('click', () => {
   c64.drive?.flushWrites();
   c64.mountDisk(null);
+  const kind = ($<HTMLSelectElement>('new-disk-kind').value || 'd64') as DiskKind;
   let n = 1;
-  while (store.get(diskKey(`disco${n}.d64`))) n++;
+  while (store.get(diskKey(`disco${n}.${kind}`))) n++;
   originalImage = null;
-  insertD64(blankD64(`DISCO ${n}`, String(n).padStart(2, '0')), `disco${n}.d64`, false);
+  const switched = insertD64(blankDisk(kind, `DISCO ${n}`, String(n).padStart(2, '0')), `disco${n}.${kind}`, false);
   store.set(diskKey(diskName), bytesToB64(diskImage!));
   renderSavedDisks();
-  toast(`Disco vuoto “disco${n}.d64” inserito nel drive 8. Salva con SAVE"NOME",8`);
+  toast(`Disco vuoto “disco${n}.${kind}” inserito nel drive 8. Salva con SAVE"NOME",8` +
+    (switched ? `. Il 1541 emulato legge solo i D64, quindi ora è attivo il drive virtuale.` : ''));
   screenWrap.focus();
 });
 

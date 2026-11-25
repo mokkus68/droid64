@@ -1,15 +1,8 @@
-// Disk / tape image parsing (D64, T64, PRG)
+// Disk / tape image parsing (D64, D71, D81, T64, PRG)
+import { geometryFor, freeBlocks } from './geometry';
 
 export interface DiskFile { name: string; rawName: Uint8Array; type: string; blocks: number; data: Uint8Array | null; }
 export interface DiskImage { title: string; id: string; files: DiskFile[]; freeBlocks: number; }
-
-const SECTORS = (t: number) => (t <= 17 ? 21 : t <= 24 ? 19 : t <= 30 ? 18 : 17);
-
-function trackOffset(track: number): number {
-  let off = 0;
-  for (let t = 1; t < track; t++) off += SECTORS(t) * 256;
-  return off;
-}
 
 export function petsciiToAscii(code: number): string {
   if (code >= 0x41 && code <= 0x5a) return String.fromCharCode(code);
@@ -32,18 +25,18 @@ export const nameToString = (n: Uint8Array) => Array.from(n, petsciiToAscii).joi
 export type D64File = DiskFile;
 
 export function parseD64(img: Uint8Array): DiskImage & { files: D64File[] } {
-  const sector = (t: number, s: number) => trackOffset(t) + s * 256;
-  const maxTrack = img.length >= 196608 ? 40 : 35;
-  const bam = sector(18, 0);
-  const title = nameToString(readName(img, bam + 0x90, 16));
-  const id = nameToString(img.slice(bam + 0xa2, bam + 0xa7));
-  let free = 0;
-  for (let t = 1; t <= 35; t++) if (t !== 18) free += img[bam + t * 4];
+  const g = geometryFor(img);
+  const sector = (t: number, s: number) => g.offset(t, s);
+  const maxTrack = g.tracks;
+  const hdr = sector(g.header.t, g.header.s);
+  const title = nameToString(readName(img, hdr + g.header.name, 16));
+  const id = nameToString(img.slice(hdr + g.header.id, hdr + g.header.id + 5));
+  const free = freeBlocks(img, g);
 
   const readChain = (t: number, s: number): Uint8Array => {
     const chunks: number[] = [];
     const seen = new Set<string>();
-    while (t !== 0 && t <= maxTrack) {
+    while (t !== 0 && t <= maxTrack && s < g.spt(t)) {
       const key = `${t}/${s}`;
       if (seen.has(key)) break;
       seen.add(key);
@@ -58,9 +51,9 @@ export function parseD64(img: Uint8Array): DiskImage & { files: D64File[] } {
   };
 
   const files: D64File[] = [];
-  let t = 18, s = 1;
+  let t = g.dirTrack, s = g.firstDirSector;
   const seen = new Set<string>();
-  while (t !== 0 && !seen.has(`${t}/${s}`)) {
+  while (t !== 0 && t <= maxTrack && s < g.spt(t) && !seen.has(`${t}/${s}`)) {
     seen.add(`${t}/${s}`);
     const off = sector(t, s);
     if (off + 256 > img.length) break;
