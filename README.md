@@ -17,6 +17,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Nastri .TAP** (v0 e v1): registratore emulato a livello di impulsi sul pin FLAG del CIA1, con tasto PLAY e motore sulla porta `$01`, quindi funzionano sia il caricamento del KERNAL sia i turbo loader. Avvio automatico, turbo mentre il motore gira (disattivabile nel pannello del registratore per avere la velocità reale), contagiri del Datasette (non lineare come la bobina vera) con tasto di azzeramento. Salvataggio su nastro: con RECORD premuto gli impulsi che il C64 scrive (bit 3 di `$01`) vengono registrati in formato TAP, scaricabili e salvati nel browser
 - **Mouse 1351 e paddle** su entrambe le porte: letti dal SID (`POTX`/`POTY`) con la selezione della porta dal CIA1; il mouse del browser viene catturato sullo schermo (Pointer Lock)
 - **REU** 1700 (128 KB), 1764 (256 KB) e 1750 (512 KB): registri a `$DF00`, trasferimenti stash, fetch, swap e verify, autoload, indirizzi fissi, interrupt e avvio con scrittura su `$FF00`
+- **Secondo drive (device 9)**, virtuale o 1541 emulato: i due 1541 emulati condividono il bus seriale come due drive veri in catena (numero di dispositivo dai ponticelli PB5-6 della VIA)
 - **Dischi D71 (1571) e D81 (1581)** con il drive virtuale: lettura, directory, salvataggio, cancellazione, rinomina e formattazione, dischi vuoti
 - **Caricamento**: PRG, D64, D71, D81, T64 e TAP
 

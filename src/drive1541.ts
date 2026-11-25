@@ -43,12 +43,13 @@ export class Drive1541 implements Bus {
   /** notify the C64 that the drive changed the lines it drives */
   onBusChanged: () => void = () => {};
 
-  constructor(rom: Uint8Array) {
+  constructor(rom: Uint8Array, public device = 8) {
     this.rom = rom;
     this.cpu = new CPU(this);
     this.via1.readPortB = () => {
       const l = this.lines();
-      return (l.data ? 0x01 : 0) | (l.clk ? 0x04 : 0) | (l.atn ? 0x80 : 0); // PB5-6 = 0: device 8
+      // PB5-6: device number jumpers (00 = 8, 01 = 9)
+      return (l.data ? 0x01 : 0) | (l.clk ? 0x04 : 0) | (((this.device - 8) & 3) << 5) | (l.atn ? 0x80 : 0);
     };
     this.via1.onPortsChanged = () => this.onBusChanged();
     // PB4 = write-protect sensor (1 = writable), PB7 = SYNC (0 = sync mark under the head)
@@ -90,15 +91,20 @@ export class Drive1541 implements Bus {
   get driveAtna() { const o = this.via1.portBOut & this.via1.ddrb; return (o & 0x10) !== 0; }
 
   /** Combined state of the bus lines (wired-AND; true = low). */
+  /** What this drive pulls low on the bus, given the ATN level. */
+  pulls(atn: boolean) {
+    // the ATN acknowledge circuit pulls DATA low while ATN and ATNA disagree
+    return { clk: this.driveClk, data: this.driveData || (atn !== this.driveAtna) };
+  }
+
+  /** other drives on the same bus (set by the machine) */
+  otherPulls: (atn: boolean) => { clk: boolean; data: boolean } = () => ({ clk: false, data: false });
+
   lines(): IecLines {
     const c = this.c64Lines();
     const atn = c.atn;
-    return {
-      atn,
-      clk: c.clk || this.driveClk,
-      // the ATN acknowledge circuit pulls DATA low while ATN and ATNA disagree
-      data: c.data || this.driveData || (atn !== this.driveAtna),
-    };
+    const own = this.pulls(atn), other = this.otherPulls(atn);
+    return { atn, clk: c.clk || own.clk || other.clk, data: c.data || own.data || other.data };
   }
 
   /** Called by the C64 when it changes ATN. */

@@ -93,6 +93,9 @@ body[data-drag="1"] .drop { border-color: var(--vic-blue); background: rgba(112,
 
 #directory { display: grid; gap: 8px; }
 .saved { display: grid; gap: 6px; }
+.drive9 { display: grid; gap: 8px; border: 1px solid var(--case-edge); border-radius: var(--r); padding: 10px; }
+.drive9-head { display: flex; gap: 10px; align-items: center; min-width: 0; }
+#drive9-disk { font: 12px/1.3 var(--font-mono); color: var(--beige); overflow-wrap: anywhere; min-width: 0; }
 .new-disk { display: inline-flex; gap: 0; }
 .new-disk button { border-radius: var(--r) 0 0 var(--r); }
 .new-disk select { background: var(--case); color: var(--beige); border: 1px solid var(--case-edge); border-left: 0; border-radius: 0 var(--r) var(--r) 0; padding: 0 8px; font: 12px var(--font-mono); min-height: 36px; }
@@ -362,6 +365,19 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
             <button type="button" id="eject">Espelli disco</button>
           </div>
         </div>
+        <div id="drive9" class="drive9" hidden>
+          <div class="drive9-head">
+            <span class="drive" data-disk="0" data-busy="0" title="Drive 9"><span class="pwr" aria-hidden="true"></span><span class="act" aria-hidden="true"></span><span class="lbl">9</span></span>
+            <span id="drive9-disk">Nessun disco</span>
+          </div>
+          <div class="row">
+            <button type="button" id="drive9-insert">Inserisci disco…</button>
+            <button type="button" id="drive9-new">Vuoto</button>
+            <button type="button" id="drive9-download" hidden>Scarica</button>
+            <button type="button" id="drive9-eject" hidden>Espelli</button>
+          </div>
+          <input type="file" id="file9" accept=".d64,.d71,.d81" hidden>
+        </div>
         <div id="saved-disks" class="saved" hidden>
           <small>Dischi e nastri salvati in questo browser</small>
           <ul id="saved-list"></ul>
@@ -462,6 +478,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-drivemode="real" aria-pressed="false" disabled>1541 emulato</button>
         </div>
         <p id="drive-note"></p>
+        <label class="check" for="drive9-on"><input type="checkbox" id="drive9-on"> Collega un secondo drive (device 9)</label>
         <label class="check" for="autoturbo"><input type="checkbox" id="autoturbo" checked> Turbo automatico mentre il drive 1541 gira</label>
       </section>
 

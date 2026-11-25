@@ -71,6 +71,8 @@ function rebuildMachine() {
   wireMachine();
   if (cartridge) c64.insertCartridge(cartridge);
   if (tape) c64.insertTape(tape);
+  c64.enableDrive9(drive9On);
+  if (disk9Image) c64.mountDisk(parseD64(disk9Image), disk9Image, false, 9);
   c64.setReu(reuSize);
   applyPortDevices();
   applyDriveMode();
@@ -88,6 +90,7 @@ function applyDriveMode() {
   c64.attachDrive(on ? b64ToBytes(userRoms.dos1541!) : null);
   c64.reset();
   if (disk) c64.mountDisk(disk, diskImage);
+  if (disk9Image) c64.mountDisk(parseD64(disk9Image), disk9Image, false, 9);
 }
 function setTrueDrive(on: boolean) {
   trueDrive = on;
@@ -400,7 +403,7 @@ function wireMachine() {
   c64.onDiskLoad = onDiskLoad;
   c64.onDiskChanged = onDiskChanged;
   c64.onDiskSave = onDiskSave;
-  c64.onDriveActivity = () => flashDrive();
+  c64.onDriveActivity = (dev) => (dev === 9 ? flashDrive9() : flashDrive());
   c64.onFastloader = () => {
     if (fastloaderWarned) return;
     fastloaderWarned = true;
@@ -681,7 +684,8 @@ function insertD64(img: Uint8Array, name: string, modified: boolean): boolean {
 }
 
 /** Called whenever the emulated drive writes to the mounted disk. */
-function onDiskChanged() {
+function onDiskChanged(device = 8) {
+  if (device === 9) { onDisk9Changed(); return; }
   if (!diskImage) return;
   disk = c64.disk ?? parseD64(diskImage);
   diskModified = true;
@@ -693,9 +697,9 @@ function onDiskChanged() {
   renderSavedDisks();
 }
 
-function onDiskSave(name: string, code: number) {
-  if (code === 0) toast(`Salvato su disco: ${name}`);
-  else if (code === 63) toast(`Sul disco esiste già “${name}”. Per sostituirlo: SAVE"@0:${name}",8`);
+function onDiskSave(name: string, code: number, device = 8) {
+  if (code === 0) toast(`Salvato sul disco del drive ${device}: ${name}`);
+  else if (code === 63) toast(`Sul disco esiste già “${name}”. Per sostituirlo: SAVE"@0:${name}",${device}`);
   else if (code === 26) toast('Questo disco è protetto da scrittura (i file .T64 non si possono modificare)');
   else toast('Disco pieno: il file non è stato salvato');
 }
@@ -742,7 +746,98 @@ $('new-disk').addEventListener('click', () => {
   screenWrap.focus();
 });
 
-window.addEventListener('pagehide', () => { c64.drive?.flushWrites(); });
+window.addEventListener('pagehide', () => { c64.drive?.flushWrites(); c64.drive9?.flushWrites(); });
+
+// ---------- drive 9 ----------
+let drive9On = store.get('c64.drive9') === '1';
+let disk9Image: Uint8Array | null = null;
+let disk9Name = '';
+let drive9BusyUntil = 0;
+function flashDrive9(ms = 900) { drive9BusyUntil = performance.now() + ms; }
+function setDrive9(on: boolean) {
+  drive9On = on;
+  store.set('c64.drive9', on ? '1' : '0');
+  if (!on) { c64.drive9?.flushWrites(); disk9Image = null; disk9Name = ''; }
+  c64.enableDrive9(on);
+  showDrive9();
+  renderSavedDisks();
+}
+function insertDisk9(img: Uint8Array, name: string) {
+  const kind = geometryFor(img).kind;
+  if (kind !== 'd64' && c64.drive) {
+    setTrueDrive(false);
+    toast(`Il 1541 emulato legge solo dischi D64: per questo ${kind.toUpperCase()} uso i drive virtuali.`);
+  }
+  c64.drive9?.flushWrites();
+  disk9Image = img; disk9Name = name;
+  c64.mountDisk(parseD64(img), img, false, 9);
+  showDrive9();
+}
+function onDisk9Changed() {
+  if (!disk9Image) return;
+  flashDrive9();
+  store.set(diskKey(disk9Name), bytesToB64(disk9Image));
+  showDrive9();
+  renderSavedDisks();
+}
+function showDrive9() {
+  $('drive9').hidden = !drive9On;
+  $<HTMLInputElement>('drive9-on').checked = drive9On;
+  const d = c64.disk9;
+  $('drive9-disk').textContent = d ? `${disk9Name} · “${d.title.trim()}” · ${d.freeBlocks} blocchi liberi · ${d.files.length} file` : 'Nessun disco';
+  for (const id of ['drive9-download', 'drive9-eject']) $(id).hidden = !d;
+}
+function updateDrive9() {
+  if (!drive9On) return;
+  const el = $('drive9').querySelector<HTMLElement>('.drive')!;
+  el.dataset.disk = c64.disk9 ? '1' : '0';
+  el.dataset.busy = performance.now() < drive9BusyUntil || !!c64.drive9?.led ? '1' : '0';
+}
+$<HTMLInputElement>('drive9-on').addEventListener('change', (e) => {
+  setDrive9((e.target as HTMLInputElement).checked);
+  toast(drive9On ? 'Secondo drive collegato come device 9' : 'Secondo drive scollegato');
+});
+const file9 = $<HTMLInputElement>('file9');
+$('drive9-insert').addEventListener('click', () => file9.click());
+file9.addEventListener('change', async () => {
+  const f = file9.files?.[0]; file9.value = '';
+  if (!f) return;
+  const data = new Uint8Array(await f.arrayBuffer());
+  if (!isDiskImageSize(data.length)) { toast(`${f.name} non è un'immagine D64, D71 o D81`); return; }
+  const saved = loadSavedDisk(f.name);
+  insertDisk9(saved && saved.length === data.length ? saved : data, f.name);
+  toast(`Disco “${f.name}” inserito nel drive 9`);
+});
+$('drive9-new').addEventListener('click', () => {
+  const kind = ($<HTMLSelectElement>('new-disk-kind').value || 'd64') as DiskKind;
+  let n = 1;
+  while (store.get(diskKey(`disco${n}.${kind}`))) n++;
+  insertDisk9(blankDisk(kind, `DISCO ${n}`, String(n).padStart(2, '0')), `disco${n}.${kind}`);
+  store.set(diskKey(disk9Name), bytesToB64(disk9Image!));
+  renderSavedDisks();
+  toast(`Disco vuoto “disco${n}.${kind}” inserito nel drive 9. Salva con SAVE"NOME",9`);
+});
+$('drive9-eject').addEventListener('click', () => {
+  c64.drive9?.flushWrites();
+  disk9Image = null; disk9Name = '';
+  c64.mountDisk(null, null, false, 9);
+  showDrive9();
+  toast('Disco espulso dal drive 9');
+});
+$('drive9-download').addEventListener('click', () => {
+  if (!disk9Image) return;
+  c64.drive9?.flushWrites();
+  const name = /\.d(64|71|81)$/i.test(disk9Name) ? disk9Name : disk9Name + '.' + geometryFor(disk9Image).kind;
+  try {
+    const url = URL.createObjectURL(new Blob([disk9Image], { type: 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch { toast('Il browser ha bloccato lo scaricamento'); }
+});
+c64.enableDrive9(drive9On);
+showDrive9();
 
 /** Disks kept in this browser (blank disks and modified ones), to reinsert after a reload. */
 function renderSavedDisks() {
@@ -782,6 +877,17 @@ function renderSavedDisks() {
       toast(`Disco “${n}” inserito nel drive 8`);
       screenWrap.focus();
     });
+    if (kind === 'disk' && drive9On) {
+      const to9 = document.createElement('button');
+      to9.type = 'button'; to9.className = 'saved-del'; to9.textContent = '→ 9';
+      to9.title = 'Inserisci nel drive 9';
+      to9.setAttribute('aria-label', `Inserisci ${n} nel drive 9`);
+      to9.addEventListener('click', () => {
+        const img = loadSavedDisk(n);
+        if (img) { insertDisk9(img, n); toast(`Disco “${n}” inserito nel drive 9`); }
+      });
+      li.append(open, to9);
+    }
     const del = document.createElement('button');
     del.type = 'button'; del.className = 'saved-del'; del.textContent = 'Elimina';
     del.setAttribute('aria-label', `Elimina ${n} da questo browser`);
@@ -792,7 +898,8 @@ function renderSavedDisks() {
       renderSavedDisks();
       toast(`“${n}” eliminato da questo browser`);
     });
-    li.append(open, del);
+    if (!li.contains(open)) li.append(open);
+    li.append(del);
     ul.append(li);
   }
 }
@@ -1006,6 +1113,7 @@ let fpsFrames = 0, fpsT = performance.now(), lastFrameCount = 0;
 function updateLeds() {
   const now = performance.now();
   updateDrive();
+  updateDrive9();
   updateTape();
   if (now - fpsT > 1000) {
     const frames = framesRun - lastFrameCount;

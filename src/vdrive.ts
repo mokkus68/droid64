@@ -38,7 +38,7 @@ export class VirtualDrive {
   /** the disk image was modified (file saved, scratched, renamed, formatted) */
   onDiskChanged: () => void = () => {};
 
-  constructor(public disk: Disk, image: Uint8Array | null) {
+  constructor(public disk: Disk, image: Uint8Array | null, public device = 8) {
     this.image = image;
   }
 
@@ -51,13 +51,13 @@ export class VirtualDrive {
 
   // ---- bus primitives; each returns the ST bits to OR into $90 ----
   listen(dev: number): boolean {
-    if ((dev & 0x1f) !== 8) { this.listening = false; return false; }
+    if ((dev & 0x1f) !== this.device) { this.listening = false; return false; }
     this.listening = true; this.talking = false;
     this.listenChannel = -1;
     return true;
   }
   talk(dev: number): boolean {
-    if ((dev & 0x1f) !== 8) { this.talking = false; return false; }
+    if ((dev & 0x1f) !== this.device) { this.talking = false; return false; }
     this.talking = true; this.listening = false;
     this.talkChannel = -1;
     return true;

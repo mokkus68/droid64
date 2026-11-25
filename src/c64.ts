@@ -85,7 +85,7 @@ export class C64 implements Bus {
     this.cia2.readPortA = (c) => {
       const out = (c.pra | ~c.ddra) & 0xff;
       if (this.drive) {
-        const l = this.drive.lines();
+        const l = this.busLines();
         return (out & 0x3f) | (l.clk ? 0 : 0x40) | (l.data ? 0 : 0x80);
       }
       const clkIn = out & 0x10 ? 0 : 0x40;
@@ -104,7 +104,8 @@ export class C64 implements Bus {
     this.cart?.reset();
     this.reu?.reset();
     this.vdrive?.reset();
-    if (this.drive) { this.drive.reset(); this.drive.resetClock(this.now); }
+    this.vdrive9?.reset();
+    for (const d of this.realDrives()) { d.reset(); d.resetClock(this.now); }
     this.portDdr = 0x2f; this.portData = 0x37; this.updatePort();
     this.cia1.reset(); this.cia2.reset();
     this.vicBank = 0;
@@ -206,7 +207,7 @@ export class C64 implements Bus {
       case 8: case 9: case 0xa: case 0xb: return (this.colorRam[addr & 0x3ff] & 0x0f) | 0xf0;
       case 0xc: return this.cia1.read(addr);
       case 0xd:
-        if (this.drive && (addr & 0xf) === 0) this.drive.runUntil(this.instrStart + 3);
+        if (this.drive && (addr & 0xf) === 0) this.syncDrives(this.instrStart + 3);
         return this.cia2.read(addr);
       case 0xe: return this.cart ? this.cart.io1Read(addr) : 0xff;
       default:
@@ -224,10 +225,10 @@ export class C64 implements Bus {
       case 0xd: {
         const r = addr & 0xf;
         if (this.drive && (r === 0 || r === 2)) {
-          this.drive.runUntil(this.instrStart + 3);
+          this.syncDrives(this.instrStart + 3);
           const atn = this.iecLines().atn;
           this.cia2.write(addr, v);
-          if (this.iecLines().atn !== atn) this.drive.atnChanged();
+          if (this.iecLines().atn !== atn) for (const d of this.realDrives()) d.atnChanged();
         } else this.cia2.write(addr, v);
         break;
       }
@@ -247,7 +248,7 @@ export class C64 implements Bus {
       if (stolen) { cia1.clock(stolen); cia2.clock(stolen); if (this.tape?.playing && this.tape.motor) this.tape.clock(stolen); }
       this.cycleBudget += CYCLES_PER_LINE - stolen;
       this.now += stolen;
-      const drive = this.drive;
+      const drive = this.drive, drive9 = this.drive9;
       const tape = this.tape && this.tape.playing && this.tape.motor ? this.tape : null; // also counts while recording
       while (this.cycleBudget > 0) {
         this.instrStart = this.now;
@@ -255,7 +256,7 @@ export class C64 implements Bus {
         this.cycleBudget -= c;
         this.now += c;
         cia1.clock(c); cia2.clock(c);
-        if (drive) drive.runUntil(this.now);
+        if (drive) { drive.runUntil(this.now); if (drive9) drive9.runUntil(this.now); }
         if (tape) tape.clock(c);
       }
       sid.clock(CYCLES_PER_LINE);
@@ -315,12 +316,12 @@ export class C64 implements Bus {
   }
 
   vdrive: VirtualDrive | null = null;
-  onDriveActivity: (() => void) | null = null;
+  onDriveActivity: ((device: number) => void) | null = null;
   onFastloader: (() => void) | null = null;
   /** result of a KERNAL SAVE served by the virtual drive (DOS status code) */
-  onDiskSave: ((name: string, code: number) => void) | null = null;
+  onDiskSave: ((name: string, code: number, device: number) => void) | null = null;
   /** the mounted disk image was written to */
-  onDiskChanged: (() => void) | null = null;
+  onDiskChanged: ((device: number) => void) | null = null;
   private traps = new Map<number, number>();
   /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
   serialTrapsActive = false;
@@ -383,8 +384,15 @@ export class C64 implements Bus {
     this.updatePort();
   }
 
-  // ---------- real 1541 emulation ----------
-  drive: Drive1541 | null = null;
+  // ---------- drives 8 and 9: fast virtual drives or emulated 1541s ----------
+  drive: Drive1541 | null = null;     // emulated 1541 on device 8
+  drive9: Drive1541 | null = null;    // emulated 1541 on device 9
+  vdrive9: VirtualDrive | null = null;
+  disk9: (DiskImage & { files: D64File[] }) | null = null;
+  private diskImage9: Uint8Array | null = null;
+  /** a second drive (device 9) is connected */
+  drive9Enabled = false;
+  private driveRom: Uint8Array | null = null;
   private now = 0;          // C64 cycles since power-on, including cycles stolen by the VIC
   private instrStart = 0;   // C64 time at the start of the current instruction
   private diskImage: Uint8Array | null = null;
@@ -394,43 +402,84 @@ export class C64 implements Bus {
     const c = this.cia2, o = c.pra & c.ddra;
     return { atn: (o & 0x08) !== 0, clk: (o & 0x10) !== 0, data: (o & 0x20) !== 0 };
   }
+  private realDrives(): Drive1541[] {
+    return this.drive9 ? [this.drive!, this.drive9] : this.drive ? [this.drive] : [];
+  }
+  /** Wired-AND of the C64 and every emulated drive. */
+  private busLines() {
+    const c = this.iecLines();
+    let clk = c.clk, data = c.data;
+    for (const d of this.realDrives()) { const p = d.pulls(c.atn); clk ||= p.clk; data ||= p.data; }
+    return { atn: c.atn, clk, data };
+  }
+  private syncDrives(t: number) { for (const d of this.realDrives()) d.runUntil(t); }
 
-  /** Attach a fully emulated 1541 (pass its 16K DOS ROM) or go back to the fast virtual drive (null). */
-  attachDrive(rom: Uint8Array | null) {
-    if (rom) {
-      const d = new Drive1541(rom);
-      d.c64Lines = () => this.iecLines();
-      d.onDiskWritten = () => {
-        if (this.diskImage) this.disk = parseD64(this.diskImage);
-        this.onDiskChanged?.();
-      };
-      d.resetClock(this.now);
-      d.insertDisk(this.diskImage);
-      this.drive = d;
-    } else this.drive = null;
-    this.mountDisk(this.disk, this.diskImage, true);
+  private makeDrive(rom: Uint8Array, device: number, image: Uint8Array | null): Drive1541 {
+    const d = new Drive1541(rom, device);
+    d.c64Lines = () => this.iecLines();
+    d.otherPulls = (atn) => {
+      let clk = false, data = false;
+      for (const o of this.realDrives()) if (o !== d) { const p = o.pulls(atn); clk ||= p.clk; data ||= p.data; }
+      return { clk, data };
+    };
+    d.onDiskWritten = () => {
+      if (device === 9) { if (this.diskImage9) this.disk9 = parseD64(this.diskImage9); }
+      else if (this.diskImage) this.disk = parseD64(this.diskImage);
+      this.onDiskChanged?.(device);
+    };
+    d.resetClock(this.now);
+    d.insertDisk(image);
+    return d;
   }
 
-  mountDisk(disk: (DiskImage & { files: D64File[] }) | null, image: Uint8Array | null = null, force = false) {
-    if (this.drive) {
+  /** Attach fully emulated 1541s (pass the 16K DOS ROM) or go back to the fast virtual drives (null). */
+  attachDrive(rom: Uint8Array | null) {
+    this.driveRom = rom;
+    this.drive = rom ? this.makeDrive(rom, 8, this.diskImage) : null;
+    this.drive9 = rom && this.drive9Enabled ? this.makeDrive(rom, 9, this.diskImage9) : null;
+    this.mountDisk(this.disk, this.diskImage, true);
+    this.mountDisk(this.disk9, this.diskImage9, true, 9);
+  }
+
+  /** Connect or disconnect the second drive (device 9). */
+  enableDrive9(on: boolean) {
+    this.drive9Enabled = on;
+    if (!on) { this.disk9 = null; this.diskImage9 = null; this.vdrive9 = null; this.drive9 = null; this.updateTrap(); return; }
+    if (this.driveRom && !this.drive9) this.drive9 = this.makeDrive(this.driveRom, 9, this.diskImage9);
+  }
+
+  mountDisk(disk: (DiskImage & { files: D64File[] }) | null, image: Uint8Array | null = null, force = false, device: 8 | 9 = 8) {
+    const nine = device === 9;
+    const real = nine ? this.drive9 : this.drive;
+    if (real) {
       // the emulated drive reads the disk itself: no KERNAL traps
-      if (force || image !== this.diskImage) this.drive.insertDisk(image);
-      this.disk = disk; this.diskImage = image;
-      this.vdrive = null;
-      this.cpu.trap = null;
+      if (force || image !== (nine ? this.diskImage9 : this.diskImage)) real.insertDisk(image);
+      if (nine) { this.disk9 = disk; this.diskImage9 = image; this.vdrive9 = null; }
+      else { this.disk = disk; this.diskImage = image; this.vdrive = null; }
+      this.updateTrap();
       return;
     }
-    this.diskImage = image;
-    if (!force && disk && this.disk === disk && this.vdrive) { this.cpu.trap = (cpu) => this.kernalTrap(cpu); return; }
-    this.disk = disk;
-    this.vdrive = disk ? new VirtualDrive(disk, image) : null;
-    if (this.vdrive) {
-      this.vdrive.onActivity = () => this.onDriveActivity?.();
-      this.vdrive.onFastloader = () => this.onFastloader?.();
-      this.vdrive.onDiskChanged = () => { this.disk = this.vdrive!.disk; this.onDiskChanged?.(); };
+    if (nine && !this.drive9Enabled) return;
+    const cur = nine ? this.vdrive9 : this.vdrive;
+    if (nine) this.diskImage9 = image; else this.diskImage = image;
+    if (!force && disk && (nine ? this.disk9 : this.disk) === disk && cur) { this.updateTrap(); return; }
+    const v = disk ? new VirtualDrive(disk, image, device) : null;
+    if (v) {
+      v.onActivity = () => this.onDriveActivity?.(device);
+      v.onFastloader = () => this.onFastloader?.();
+      v.onDiskChanged = () => {
+        if (nine) this.disk9 = v.disk; else this.disk = v.disk;
+        this.onDiskChanged?.(device);
+      };
     }
+    if (nine) { this.disk9 = disk; this.vdrive9 = v; } else { this.disk = disk; this.vdrive = v; }
     this.buildTraps();
-    this.cpu.trap = disk ? (cpu) => this.kernalTrap(cpu) : null;
+    this.updateTrap();
+  }
+
+  /** KERNAL traps are needed while a virtual drive has a disk. */
+  private updateTrap() {
+    this.cpu.trap = this.vdrive || this.vdrive9 ? (cpu) => this.kernalTrap(cpu) : null;
   }
 
   /** Trap the KERNAL serial-bus routines: both the jump-table entries and the routines they jump to. */
@@ -463,11 +512,21 @@ export class C64 implements Bus {
     cpu.pc = (((hi << 8) | lo) + 1) & 0xffff;
   }
 
+  private activeV: VirtualDrive | null = null;
   private serialTrap(cpu: CPU, kind: number): boolean {
-    const d = this.vdrive!;
+    if (kind === T_LISTEN || kind === T_TALK) {
+      const dev = cpu.a & 0x1f;
+      const v = dev === 9 ? this.vdrive9 : dev === 8 ? this.vdrive : null;
+      for (const o of [this.vdrive, this.vdrive9]) if (o && o !== v) { o.listen(0); o.talk(0); }
+      this.activeV = v;
+      if (!v) return false;
+      if (kind === T_LISTEN) v.listen(cpu.a); else v.talk(cpu.a);
+      cpu.c = 0; this.rts(cpu);
+      return true;
+    }
+    const d = this.activeV;
+    if (!d) return false;
     switch (kind) {
-      case T_LISTEN: if (!d.listen(cpu.a)) return false; break;
-      case T_TALK: if (!d.talk(cpu.a)) return false; break;
       case T_SECOND: if (!d.active) return false; d.second(cpu.a); break;
       case T_TKSA: if (!d.active) return false; d.tksa(cpu.a); break;
       case T_CIOUT: if (!d.active) return false; d.ciout(cpu.a); break;
@@ -489,7 +548,9 @@ export class C64 implements Bus {
   /** KERNAL SAVE ($FFD8): A = zero-page pointer to the start address, X/Y = end address. */
   private saveTrap(cpu: CPU): boolean {
     const ram = this.ram;
-    if (ram[0xba] !== 8 || !this.vdrive) return false;
+    const dev = ram[0xba];
+    const vd = dev === 9 ? this.vdrive9 : dev === 8 ? this.vdrive : null;
+    if (!vd) return false;
     const zp = cpu.a;
     const start = ram[zp] | (ram[(zp + 1) & 0xff] << 8);
     const end = cpu.x | (cpu.y << 8);
@@ -499,24 +560,26 @@ export class C64 implements Bus {
     const data = new Uint8Array(Math.max(0, end - start) + 2);
     data[0] = start & 0xff; data[1] = start >> 8;
     for (let a = start, i = 2; a < end; a++, i++) data[i] = this.read(a);
-    this.onDriveActivity?.();
-    const code = this.vdrive.saveFile(name, data, 'PRG');
+    this.onDriveActivity?.(dev);
+    const code = vd.saveFile(name, data, 'PRG');
     this.rts(cpu);
     // as on a real 1541, disk errors (file exists, disk full) are not reported by SAVE itself:
     // they are in the drive status (PRINT DS$ / INPUT#15)
     cpu.c = 0; cpu.a = 0;
     ram[0x90] = 0;
-    this.onDiskSave?.(Array.from(name, (c) => String.fromCharCode(c)).join(''), code);
+    this.onDiskSave?.(Array.from(name, (c) => String.fromCharCode(c)).join(''), code, dev);
     return true;
   }
 
   private kernalTrap(cpu: CPU): boolean {
     const kind = this.traps.get(cpu.pc);
-    if (kind === undefined || !this.disk || cpu.pc < 0xe000 || !this.kernalIn) return false;
+    if (kind === undefined || cpu.pc < 0xe000 || !this.kernalIn) return false;
     if (kind === T_SAVE) return this.saveTrap(cpu);
     if (kind !== T_LOAD) return this.serialTrap(cpu, kind);
     const ram = this.ram;
-    if (ram[0xba] !== 8) return false;
+    const dev = ram[0xba];
+    const ldisk = dev === 9 ? (this.vdrive9 ? this.disk9 : null) : dev === 8 ? (this.vdrive ? this.disk : null) : null;
+    if (!ldisk) return false;
     const nameLen = ram[0xb7];
     const nameAddr = ram[0xbb] | (ram[0xbc] << 8);
     const name = new Uint8Array(nameLen);
@@ -525,16 +588,16 @@ export class C64 implements Bus {
     let data: Uint8Array | null = null;
     let label = Array.from(name, (c) => String.fromCharCode(c)).join('');
     if (nameLen >= 1 && name[0] === 0x24) {
-      data = buildDirectoryListing(this.disk);
+      data = buildDirectoryListing(ldisk);
     } else {
       // "0:NAME" drive prefix
       let pat = name;
       const colon = pat.indexOf(0x3a);
       if (colon >= 0 && colon <= 1) pat = pat.subarray(colon + 1);
-      const file = this.disk.files.find((f) => f.data && f.type === 'PRG' && (pat.length === 0 || matchName(pat, f.rawName)));
+      const file = ldisk.files.find((f) => f.data && f.type === 'PRG' && (pat.length === 0 || matchName(pat, f.rawName)));
       if (file) { data = file.data; label = file.name; }
     }
-    this.onDriveActivity?.();
+    this.onDriveActivity?.(dev);
     // emulate RTS from the JSR $FFD5
     const lo = this.read(0x100 | ((cpu.s + 1) & 0xff)), hi = this.read(0x100 | ((cpu.s + 2) & 0xff));
     cpu.s = (cpu.s + 2) & 0xff;
