@@ -14,7 +14,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **1541 emulato** (con la ROM del drive caricata dall'utente): processore 6502 del drive, 2 KB di RAM, due VIA 6522, motore e testina, disco convertito in GCR con le zone di velocità reali, bus seriale ATN/CLK/DATA. C64 e drive avanzano insieme con precisione al ciclo, quindi funzionano anche i fastloader. Turbo automatico mentre il drive gira
 - **Drive virtuale veloce (device 8)**, in alternativa: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
 - **Scrittura su disco** con entrambi i drive: `SAVE` (anche `@0:` per sostituire), file `SEQ`/`PRG` aperti in scrittura, cancellazione `S:`, rinomina `R:`, formattazione `N:`. Con il 1541 emulato scrive il DOS del drive in GCR e i settori vengono ridecodificati nell'immagine D64. I dischi modificati restano salvati nel browser, si possono scaricare come `.d64` e si possono creare dischi vuoti
-- **Nastri .TAP** (v0 e v1): registratore emulato a livello di impulsi sul pin FLAG del CIA1, con tasto PLAY e motore sulla porta `$01`, quindi funzionano sia il caricamento del KERNAL sia i turbo loader. Avvio automatico, turbo mentre il motore gira
+- **Nastri .TAP** (v0 e v1): registratore emulato a livello di impulsi sul pin FLAG del CIA1, con tasto PLAY e motore sulla porta `$01`, quindi funzionano sia il caricamento del KERNAL sia i turbo loader. Avvio automatico, turbo mentre il motore gira. Salvataggio su nastro: con RECORD premuto gli impulsi che il C64 scrive (bit 3 di `$01`) vengono registrati in formato TAP, scaricabili e salvati nel browser
 - **Caricamento**: PRG, D64, T64 e TAP
 
 ## ROM
@@ -68,7 +68,7 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
 - Con il drive virtuale i fastloader non funzionano (compare un avviso): serve il 1541 emulato
 - La codifica GCR del 1541 emulato è a livello di byte: le protezioni anticopia che dipendono dai singoli bit non sono riprodotte
-- I file `.T64` sono di sola lettura; il salvataggio su nastro (`SAVE` su device 1) non è supportato
+- I file `.T64` sono di sola lettura; con le Open ROMs il salvataggio su nastro non funziona (il loro KERNAL non lo implementa)
 - Cartucce `.CRT`: non sono supportati i tipi con freezer o hardware speciale (Action Replay, Final Cartridge III, Retro Replay…)
 
 ## Licenza

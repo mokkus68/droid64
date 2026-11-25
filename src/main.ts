@@ -7,7 +7,7 @@ import { DEMO } from './demo';
 import { buildKeyboard } from './vkbd';
 import { Cartridge } from './cartridge';
 import { blankD64 } from './d64write';
-import { Tape } from './tape';
+import { Tape, blankTap } from './tape';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -387,7 +387,10 @@ let tape: Tape | null = null;
 function insertTape(t: Tape | null, autostart = false) {
   tape = t;
   c64.insertTape(t);
-  if (t) t.onEnd = () => toast('Fine del nastro');
+  if (t) {
+    t.onEnd = () => toast('Fine del nastro');
+    t.onChanged = () => saveTape(t);
+  }
   $('tape').hidden = !t;
   if (t) $('tape-name').textContent = t.name;
   if (t && autostart) startTape();
@@ -414,15 +417,57 @@ function updateTape() {
   if (!tape) return;
   $<HTMLElement>('tape-bar').style.width = `${(tape.progress * 100).toFixed(1)}%`;
   $('tape-pct').textContent = `${Math.round(tape.progress * 100)}%`;
-  const state = tape.atEnd ? 'Fine del nastro' : tape.running ? 'In riproduzione · motore acceso' : tape.playing ? 'PLAY premuto · motore fermo' : 'Fermo';
+  const state = tape.recording
+    ? (tape.motor ? 'Registrazione in corso · motore acceso' : 'RECORD e PLAY premuti · motore fermo')
+    : tape.atEnd && tape.length ? 'Fine del nastro' : tape.running ? 'In riproduzione · motore acceso' : tape.playing ? 'PLAY premuto · motore fermo' : tape.length ? 'Fermo' : 'Nastro vuoto · premi Registra e poi SAVE';
   $('tape-state').textContent = state;
   $('tape').dataset.running = tape.running ? '1' : '0';
-  $('tape-play').setAttribute('aria-pressed', String(tape.playing));
+  $('tape-play').setAttribute('aria-pressed', String(tape.playing && !tape.recording));
+  $('tape-rec').setAttribute('aria-pressed', String(tape.recording));
+  $('tape').dataset.rec = tape.recording ? '1' : '0';
 }
-$('tape-play').addEventListener('click', () => { if (tape) { tape.playing = !tape.playing; startAudio(); } screenWrap.focus(); });
-$('tape-rewind').addEventListener('click', () => { if (tape) { tape.playing = false; tape.rewind(); toast('Nastro riavvolto'); } });
+const tapeKey = (name: string) => 'c64.tape:' + name.toLowerCase();
+function saveTape(t: Tape) {
+  store.set(tapeKey(t.name), bytesToB64(t.toTap()));
+  if (store.get(tapeKey(t.name)) === null) toast('Spazio del browser esaurito: scarica il nastro con “Scarica .tap” per non perderlo');
+  else toast(`Registrazione aggiunta al nastro ${t.name} (salvato in questo browser)`);
+  renderSavedDisks();
+}
+$('tape-rec').addEventListener('click', () => {
+  if (!tape) return;
+  if (tape.recording) tape.stop(); else { tape.startRecording(); startAudio(); }
+  screenWrap.focus();
+});
+$('tape-stop').addEventListener('click', () => { tape?.stop(); screenWrap.focus(); });
+$('tape-download').addEventListener('click', () => {
+  if (!tape) return;
+  const name = /\.tap$/i.test(tape.name) ? tape.name : tape.name.replace(/\.[^.]*$/, '') + '.tap';
+  try {
+    const url = URL.createObjectURL(new Blob([tape.toTap()], { type: 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast(`Scaricamento di ${name} avviato (se non parte, apri l'emulatore dal sito GitHub Pages)`);
+  } catch { toast('Il browser ha bloccato lo scaricamento'); }
+});
+$('new-tape').addEventListener('click', () => {
+  let n = 1;
+  while (store.get(tapeKey(`nastro${n}.tap`))) n++;
+  const t = new Tape(blankTap(), `nastro${n}.tap`);
+  insertTape(t);
+  toast(romInfo.original
+    ? `Nastro vuoto “nastro${n}.tap” inserito. Scrivi SAVE"NOME" e, quando compare PRESS RECORD & PLAY, premi ⏺ Registra.`
+    : 'Nastro vuoto inserito. Attenzione: le ROM libere non sanno salvare su nastro, servono le ROM originali.');
+  screenWrap.focus();
+});
+$('tape-play').addEventListener('click', () => {
+  if (tape) { if (tape.recording) tape.stop(); tape.playing = !tape.playing; startAudio(); }
+  screenWrap.focus();
+});
+$('tape-rewind').addEventListener('click', () => { if (tape) { tape.stop(); tape.rewind(); toast('Nastro riavvolto'); } });
 $('tape-start').addEventListener('click', () => startTape());
-$('tape-eject').addEventListener('click', () => { insertTape(null); toast('Nastro espulso'); });
+$('tape-eject').addEventListener('click', () => { tape?.stop(); insertTape(null); toast('Nastro espulso'); });
 
 // ---------- cartridge ----------
 let cartridge: Cartridge | null = null;
@@ -615,24 +660,33 @@ window.addEventListener('pagehide', () => { c64.drive?.flushWrites(); });
 
 /** Disks kept in this browser (blank disks and modified ones), to reinsert after a reload. */
 function renderSavedDisks() {
-  const names: string[] = [];
+  const items: { kind: 'disk' | 'tape'; name: string }[] = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k?.startsWith('c64.disk:')) names.push(k.slice(9));
+      if (k?.startsWith('c64.disk:')) items.push({ kind: 'disk', name: k.slice(9) });
+      if (k?.startsWith('c64.tape:')) items.push({ kind: 'tape', name: k.slice(9) });
     }
   } catch { /* storage unavailable */ }
-  names.sort();
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  const names = items;
   const box = $('saved-disks');
   box.hidden = !names.length;
   const ul = $('saved-list');
   ul.replaceChildren();
-  for (const n of names) {
+  for (const { kind, name: n } of names) {
     const li = document.createElement('li');
     const open = document.createElement('button');
     open.type = 'button'; open.className = 'saved-open'; open.textContent = n;
-    open.title = 'Inserisci nel drive 8';
+    open.title = kind === 'tape' ? 'Inserisci nel registratore' : 'Inserisci nel drive 8';
     open.addEventListener('click', () => {
+      if (kind === 'tape') {
+        const b64 = store.get(tapeKey(n));
+        try { insertTape(new Tape(b64ToBytes(b64 ?? ''), n)); toast(`Nastro “${n}” inserito nel registratore`); }
+        catch { toast('Questo nastro salvato non si può leggere'); }
+        screenWrap.focus();
+        return;
+      }
       const img = loadSavedDisk(n);
       if (!img) { toast('Questo disco salvato non si può leggere'); return; }
       c64.drive?.flushWrites();
@@ -648,7 +702,7 @@ function renderSavedDisks() {
     let armed = false;
     del.addEventListener('click', () => {
       if (!armed) { armed = true; del.textContent = 'Conferma'; setTimeout(() => { armed = false; del.textContent = 'Elimina'; }, 3000); return; }
-      store.del(diskKey(n));
+      store.del(kind === 'tape' ? tapeKey(n) : diskKey(n));
       renderSavedDisks();
       toast(`“${n}” eliminato da questo browser`);
     });

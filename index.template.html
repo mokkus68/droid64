@@ -182,6 +182,9 @@ body.fs-open { overflow: hidden; }
 .tape-track { height: 6px; border-radius: 3px; background: #1a1714; border: 1px solid var(--case-edge); overflow: hidden; }
 #tape-bar { height: 100%; width: 0; background: var(--vic-blue); }
 #tape-state { color: var(--muted); font-size: 12px; }
+button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; color: #fff; }
+#tape[data-rec="1"] #tape-bar { background: #c8423b; }
+#tape[data-rec="1"] .reel { border-color: #c8423b; }
 
 /* drive 8: green power LED when a disk is inserted, red activity LED while it is read */
 .drive-group { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -340,11 +343,12 @@ body.fs-open { overflow: hidden; }
           </div>
         </div>
         <div id="saved-disks" class="saved" hidden>
-          <small>Dischi salvati in questo browser</small>
+          <small>Dischi e nastri salvati in questo browser</small>
           <ul id="saved-list"></ul>
         </div>
         <div class="row">
           <button type="button" id="new-disk">Nuovo disco vuoto</button>
+          <button type="button" id="new-tape">Nuovo nastro vuoto</button>
           <button type="button" id="demo">Demo BASIC (sprite e suono)</button>
         </div>
       </section>
@@ -357,7 +361,10 @@ body.fs-open { overflow: hidden; }
         <div class="row">
           <button type="button" id="tape-start" class="primary">Avvia nastro</button>
           <button type="button" id="tape-play" aria-pressed="false">▶ Play</button>
+          <button type="button" id="tape-rec" class="rec" aria-pressed="false">⏺ Registra</button>
+          <button type="button" id="tape-stop">⏹ Stop</button>
           <button type="button" id="tape-rewind">⏮ Riavvolgi</button>
+          <button type="button" id="tape-download">Scarica .tap</button>
           <button type="button" id="tape-eject">Espelli</button>
         </div>
       </section>

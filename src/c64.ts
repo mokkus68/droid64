@@ -116,8 +116,13 @@ export class C64 implements Bus {
 
   /** Rebuild the CPU memory map from the processor port and the cartridge EXROM/GAME lines (PLA logic). */
   private updatePort() {
-    // cassette motor: bit 5 output low = motor on
-    if (this.tape) this.tape.motor = (this.portDdr & 0x20) !== 0 && (this.portData & 0x20) === 0;
+    // cassette motor: bit 5 output low = motor on; bit 3 = cassette write line
+    if (this.tape) {
+      const motor = (this.portDdr & 0x20) !== 0 && (this.portData & 0x20) === 0;
+      if (this.tape.motor && !motor) this.tape.commit();
+      this.tape.motor = motor;
+      this.tape.writeLine(this.portData & this.portDdr & 0x08, this.instrStart + 3);
+    }
     const bits = (this.portData | ~this.portDdr) & 7;
     const lo = bits & 1, hi = bits & 2, ch = bits & 4;
     const exrom = this.cart ? this.cart.exrom : 1;
