@@ -78,6 +78,8 @@ function rebuildMachine() {
 // ---------- drive 8: fast virtual drive or fully emulated 1541 ----------
 let trueDrive = store.get('c64.truedrive') !== '0';
 let autoTurbo = store.get('c64.autoturbo') !== '0';
+// the tape has its own setting: off = the Datasette runs at its real speed (counter included)
+let tapeTurbo = (store.get('c64.tapeturbo') ?? store.get('c64.autoturbo')) !== '0';
 function applyDriveMode() {
   const on = trueDrive && !!userRoms.dos1541;
   if (on === !!c64.drive) return;
@@ -140,7 +142,7 @@ function loop(now: number) {
   if (!paused) {
     pollGamepad();
     // with the emulated 1541, run flat out while the drive motor spins (loading at real speed is slow)
-    warping = turbo || (autoTurbo && ((!!c64.drive && c64.drive.motor) || (!!c64.tape && c64.tape.running)));
+    warping = turbo || (autoTurbo && !!c64.drive && c64.drive.motor) || (tapeTurbo && !!c64.tape && c64.tape.running);
     screenWrap.dataset.warp = warping && !turbo ? '1' : '0';
     if (warping) {
       const t0 = performance.now();
@@ -409,7 +411,9 @@ function startTape() {
   // the free Open ROMs default LOAD to device 8, so name the tape explicitly there
   c64.typeText((romInfo.original ? 'LOAD\n' : 'LOAD"",1\n') + 'RUN\n');
   toast(romInfo.original
-    ? `Caricamento dal nastro: ${tape.name}. Il caricamento da nastro è lento: il turbo automatico lo accelera.`
+    ? (tapeTurbo
+      ? `Caricamento dal nastro: ${tape.name}. Il turbo lo accelera; per la velocità reale togli “Turbo” nel pannello Registratore.`
+      : `Caricamento dal nastro: ${tape.name}, a velocità reale (può richiedere diversi minuti).`)
     : `Caricamento dal nastro: ${tape.name}. Con le ROM libere, a caricamento finito scrivi RUN.`);
   screenWrap.focus();
 }
@@ -789,6 +793,13 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-drivemode]')
 const autoTurboBox = $<HTMLInputElement>('autoturbo');
 autoTurboBox.checked = autoTurbo;
 autoTurboBox.addEventListener('change', () => { autoTurbo = autoTurboBox.checked; store.set('c64.autoturbo', autoTurbo ? '1' : '0'); });
+const tapeTurboBox = $<HTMLInputElement>('tapeturbo');
+tapeTurboBox.checked = tapeTurbo;
+tapeTurboBox.addEventListener('change', () => {
+  tapeTurbo = tapeTurboBox.checked;
+  store.set('c64.tapeturbo', tapeTurbo ? '1' : '0');
+  toast(tapeTurbo ? 'Nastro accelerato durante i caricamenti' : 'Nastro a velocità reale: come un Datasette vero (un gioco può richiedere diversi minuti)');
+});
 
 // ---------- controls ----------
 $('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk, diskImage); toast('Reset'); screenWrap.focus(); });

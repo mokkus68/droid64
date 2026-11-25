@@ -370,6 +370,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         </div>
         <div class="tape-track" aria-hidden="true"><div id="tape-bar"></div></div>
         <small id="tape-state">Fermo</small>
+        <label class="check" for="tapeturbo"><input type="checkbox" id="tapeturbo" checked> Turbo mentre il nastro scorre (togli per la velocità reale del Datasette)</label>
         <div class="row">
           <button type="button" id="tape-start" class="primary">Avvia nastro</button>
           <button type="button" id="tape-play" aria-pressed="false">▶ Play</button>
@@ -416,7 +417,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-drivemode="real" aria-pressed="false" disabled>1541 emulato</button>
         </div>
         <p id="drive-note"></p>
-        <label class="check" for="autoturbo"><input type="checkbox" id="autoturbo" checked> Turbo automatico durante i caricamenti (drive 1541 e nastro)</label>
+        <label class="check" for="autoturbo"><input type="checkbox" id="autoturbo" checked> Turbo automatico mentre il drive 1541 gira</label>
       </section>
 
       <section class="panel">
