@@ -4,14 +4,14 @@ import { CPU, Bus } from './cpu';
 import { VIC, CYCLES_PER_LINE, LINES_PER_FRAME } from './vic';
 import { SID } from './sid';
 import { CIA } from './cia';
-import { D64File, DiskImage, matchName, buildDirectoryListing } from './media';
+import { D64File, DiskImage, matchName, buildDirectoryListing, parseD64 } from './media';
 import { Cartridge } from './cartridge';
 import { VirtualDrive } from './vdrive';
 import { Drive1541 } from './drive1541';
 
 export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
 
-const T_LOAD = 0, T_LISTEN = 1, T_TALK = 2, T_SECOND = 3, T_TKSA = 4, T_CIOUT = 5, T_ACPTR = 6, T_UNTLK = 7, T_UNLSN = 8;
+const T_SAVE = 9, T_LOAD = 0, T_LISTEN = 1, T_TALK = 2, T_SECOND = 3, T_TKSA = 4, T_CIOUT = 5, T_ACPTR = 6, T_UNTLK = 7, T_UNLSN = 8;
 const M_RAM = 0, M_BASIC = 1, M_KERNAL = 2, M_IO = 3, M_CHAR = 4, M_ROML = 5, M_ROMH = 6, M_OPEN = 7;
 
 export const JOY_UP = 1, JOY_DOWN = 2, JOY_LEFT = 4, JOY_RIGHT = 8, JOY_FIRE = 16;
@@ -287,6 +287,10 @@ export class C64 implements Bus {
   vdrive: VirtualDrive | null = null;
   onDriveActivity: (() => void) | null = null;
   onFastloader: (() => void) | null = null;
+  /** result of a KERNAL SAVE served by the virtual drive (DOS status code) */
+  onDiskSave: ((name: string, code: number) => void) | null = null;
+  /** the mounted disk image was written to */
+  onDiskChanged: (() => void) | null = null;
   private traps = new Map<number, number>();
   /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
   serialTrapsActive = false;
@@ -308,6 +312,10 @@ export class C64 implements Bus {
     if (rom) {
       const d = new Drive1541(rom);
       d.c64Lines = () => this.iecLines();
+      d.onDiskWritten = () => {
+        if (this.diskImage) this.disk = parseD64(this.diskImage);
+        this.onDiskChanged?.();
+      };
       d.resetClock(this.now);
       d.insertDisk(this.diskImage);
       this.drive = d;
@@ -331,6 +339,7 @@ export class C64 implements Bus {
     if (this.vdrive) {
       this.vdrive.onActivity = () => this.onDriveActivity?.();
       this.vdrive.onFastloader = () => this.onFastloader?.();
+      this.vdrive.onDiskChanged = () => { this.disk = this.vdrive!.disk; this.onDiskChanged?.(); };
     }
     this.buildTraps();
     this.cpu.trap = disk ? (cpu) => this.kernalTrap(cpu) : null;
@@ -356,6 +365,7 @@ export class C64 implements Bus {
       }
     }
     this.traps.set(0xffd5, T_LOAD);
+    this.traps.set(0xffd8, T_SAVE);
   }
 
   /** Intercept KERNAL LOAD ($FFD5) for device 8 and serve files from the mounted image. */
@@ -388,9 +398,34 @@ export class C64 implements Bus {
     return true;
   }
 
+  /** KERNAL SAVE ($FFD8): A = zero-page pointer to the start address, X/Y = end address. */
+  private saveTrap(cpu: CPU): boolean {
+    const ram = this.ram;
+    if (ram[0xba] !== 8 || !this.vdrive) return false;
+    const zp = cpu.a;
+    const start = ram[zp] | (ram[(zp + 1) & 0xff] << 8);
+    const end = cpu.x | (cpu.y << 8);
+    const nameLen = ram[0xb7], nameAddr = ram[0xbb] | (ram[0xbc] << 8);
+    const name = new Uint8Array(nameLen);
+    for (let i = 0; i < nameLen; i++) name[i] = this.read((nameAddr + i) & 0xffff);
+    const data = new Uint8Array(Math.max(0, end - start) + 2);
+    data[0] = start & 0xff; data[1] = start >> 8;
+    for (let a = start, i = 2; a < end; a++, i++) data[i] = this.read(a);
+    this.onDriveActivity?.();
+    const code = this.vdrive.saveFile(name, data, 'PRG');
+    this.rts(cpu);
+    // as on a real 1541, disk errors (file exists, disk full) are not reported by SAVE itself:
+    // they are in the drive status (PRINT DS$ / INPUT#15)
+    cpu.c = 0; cpu.a = 0;
+    ram[0x90] = 0;
+    this.onDiskSave?.(Array.from(name, (c) => String.fromCharCode(c)).join(''), code);
+    return true;
+  }
+
   private kernalTrap(cpu: CPU): boolean {
     const kind = this.traps.get(cpu.pc);
     if (kind === undefined || !this.disk || cpu.pc < 0xe000 || !this.kernalIn) return false;
+    if (kind === T_SAVE) return this.saveTrap(cpu);
     if (kind !== T_LOAD) return this.serialTrap(cpu, kind);
     const ram = this.ram;
     if (ram[0xba] !== 8) return false;
@@ -408,7 +443,7 @@ export class C64 implements Bus {
       let pat = name;
       const colon = pat.indexOf(0x3a);
       if (colon >= 0 && colon <= 1) pat = pat.subarray(colon + 1);
-      const file = this.disk.files.find((f) => f.data && (pat.length === 0 || matchName(pat, f.rawName)));
+      const file = this.disk.files.find((f) => f.data && f.type === 'PRG' && (pat.length === 0 || matchName(pat, f.rawName)));
       if (file) { data = file.data; label = file.name; }
     }
     this.onDriveActivity?.();

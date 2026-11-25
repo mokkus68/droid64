@@ -86,6 +86,13 @@ body[data-drag="1"] .drop { border-color: var(--vic-blue); background: rgba(112,
 #screen-wrap[data-warp="1"] .warp-badge { display: block; }
 
 #directory { display: grid; gap: 8px; }
+.saved { display: grid; gap: 6px; }
+.saved small { color: var(--muted); font-size: 12px; }
+#saved-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+#saved-list li { display: flex; gap: 6px; }
+.saved-open { flex: 1; min-width: 0; text-align: left; font: 13px/1.2 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-del { font-size: 12px; padding: 6px 8px; min-height: 32px; }
+#dir-modified.modified { font-size: 12px; color: #eadbb0; background: #2c2617; border: 1px solid #5a4a22; border-radius: 4px; padding: 6px 8px; }
 #dir-title { font-family: var(--font-mono); font-size: 12px; color: var(--beige); overflow-wrap: anywhere; }
 #dir-list { list-style: none; margin: 0; padding: 0; max-height: 240px; overflow: auto; border: 1px solid var(--case-edge); border-radius: var(--r); background: #2e2c9b; }
 #dir-list button { width: 100%; display: grid; grid-template-columns: 3.5ch 1fr auto; gap: 8px; text-align: left; background: transparent; border: 0; border-radius: 0; color: #a5a3ff; font: 13px/1.2 var(--font-mono); padding: 6px 10px; min-height: 30px; }
@@ -312,10 +319,22 @@ body.fs-open { overflow: hidden; }
         </div>
         <div id="directory" hidden>
           <div id="dir-title"></div>
+          <div id="dir-modified" class="modified" hidden>Disco modificato · le modifiche restano salvate in questo browser</div>
           <ul id="dir-list"></ul>
-          <div class="row"><button type="button" id="eject">Espelli disco</button></div>
+          <div class="row">
+            <button type="button" id="download-disk">Scarica .d64</button>
+            <button type="button" id="revert-disk" hidden>Torna all'originale</button>
+            <button type="button" id="eject">Espelli disco</button>
+          </div>
         </div>
-        <button type="button" id="demo">Demo BASIC (sprite e suono)</button>
+        <div id="saved-disks" class="saved" hidden>
+          <small>Dischi salvati in questo browser</small>
+          <ul id="saved-list"></ul>
+        </div>
+        <div class="row">
+          <button type="button" id="new-disk">Nuovo disco vuoto</button>
+          <button type="button" id="demo">Demo BASIC (sprite e suono)</button>
+        </div>
       </section>
 
       <section class="panel">

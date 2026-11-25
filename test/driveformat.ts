@@ -1,0 +1,21 @@
+import { makeOrigC64, screenText } from './util';
+import { parseD64 } from '../src/media';
+import { blankD64 } from '../src/d64write';
+import { readFileSync } from 'fs';
+const img = blankD64('VECCHIO', 'ZZ');
+const c = makeOrigC64();
+c.attachDrive(new Uint8Array(readFileSync(process.env.DRIVEROM!)));
+c.mountDisk(parseD64(img), img);
+for (let i = 0; i < 150; i++) c.runFrame();
+c.typeText('OPEN15,8,15,"N0:FORMATTATO,42":INPUT#15,E,E$:PRINT"FORMAT";E;E$:CLOSE15\n');
+let f = 0;
+for (; f < Number(process.env.FRAMES ?? 30000); f++) { c.runFrame(); if (/FORMAT \d/.test(screenText(c))) break; }
+for (let i = 0; i < 300; i++) c.runFrame();
+console.log(screenText(c).split('\n').filter((l) => l.trim()).slice(-5).join(' / '));
+console.log('drive pc', c.drive!.cpu.pc.toString(16), 'track', c.drive!.halftrack / 2, 'motor', c.drive!.motor, 'c64 pc', c.cpu.pc.toString(16));
+const line = screenText(c).split('\n').find((l) => /^FORMAT \d/.test(l.trim()));
+const d = parseD64(img);
+console.log(`dopo ${f} frame (${(f / 50).toFixed(0)} s emulati): ${line} | titolo "${d.title.trim()}" id ${d.id} | file ${d.files.length} | liberi ${d.freeBlocks}`);
+c.typeText('SAVE"DOPO",8\n');
+for (let i = 0; i < 2000; i++) c.runFrame();
+console.log('dopo SAVE:', parseD64(img).files.map((x) => x.name).join(','));

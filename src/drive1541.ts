@@ -3,7 +3,7 @@
 
 import { CPU, Bus } from './cpu';
 import { VIA } from './via';
-import { d64ToGcr } from './gcr';
+import { d64ToGcr, gcrTrackToD64 } from './gcr';
 
 /** drive clock (1 MHz) per C64 PAL clock cycle */
 export const DRIVE_PER_C64 = 1000000 / 985248;
@@ -32,6 +32,11 @@ export class Drive1541 implements Bus {
   private prevByte = 0;
   private sync = false;
   private dataLatch = 0;
+  private image: Uint8Array | null = null;
+  private dirty = new Set<number>();   // tracks written since the last decode
+  private writing = false;
+  /** sectors written by the DOS have been copied back into the D64 image */
+  onDiskWritten: () => void = () => {};
 
   /** C64 side of the bus, as seen by the drive */
   c64Lines: () => IecLines = () => ({ atn: false, clk: false, data: false });
@@ -46,7 +51,8 @@ export class Drive1541 implements Bus {
       return (l.data ? 0x01 : 0) | (l.clk ? 0x04 : 0) | (l.atn ? 0x80 : 0); // PB5-6 = 0: device 8
     };
     this.via1.onPortsChanged = () => this.onBusChanged();
-    this.via2.readPortB = () => (this.sync ? 0 : 0x80) | 0x00; // PB4 = 0: write protected
+    // PB4 = write-protect sensor (1 = writable), PB7 = SYNC (0 = sync mark under the head)
+    this.via2.readPortB = () => (this.sync ? 0 : 0x80) | (this.image ? 0x10 : 0);
     this.via2.readPortA = () => this.dataLatch;
     this.via2.onPortsChanged = () => this.updateMechanics();
     const irq = () => { this.cpu.irqLines = (this.via1.irq ? 1 : 0) | (this.via2.irq ? 2 : 0); };
@@ -55,8 +61,20 @@ export class Drive1541 implements Bus {
   }
 
   insertDisk(img: Uint8Array | null) {
+    this.flushWrites();
+    this.image = img;
     this.tracks = img ? d64ToGcr(img) : null;
     this.headPos = 0;
+    this.dirty.clear();
+  }
+
+  /** Decode written tracks back into the D64 image. */
+  flushWrites() {
+    if (!this.dirty.size || !this.image || !this.tracks) { this.dirty.clear(); return; }
+    let n = 0;
+    for (const t of this.dirty) n += gcrTrackToD64(this.tracks[t], t, this.image);
+    this.dirty.clear();
+    if (n) this.onDiskWritten();
   }
 
   reset() {
@@ -116,7 +134,11 @@ export class Drive1541 implements Bus {
       if (oldTrackLen && len) this.headPos = Math.floor(this.headPos * len / oldTrackLen) % len;
       else this.headPos = 0;
     }
+    const writing = (this.via2.pcr & 0xe0) === 0xc0;
+    if (this.writing && !writing) this.flushWrites();
+    this.writing = writing;
     const motor = (pb & 0x04) !== 0;
+    if (!motor && this.motor) this.flushWrites();
     if (motor && !this.motor) this.nextByteAt = this.cycles + this.byteCycles();
     this.motor = motor;
     this.led = (pb & 0x08) !== 0;
@@ -132,6 +154,16 @@ export class Drive1541 implements Bus {
   private rotate() {
     const track = this.currentTrack();
     if (!track.length) { this.sync = false; return; }
+    if (this.writing) {
+      // write mode: the byte in VIA2 port A goes onto the disk, and byte-ready still pulses
+      track[this.headPos] = this.via2.portAOut;
+      this.headPos = (this.headPos + 1) % track.length;
+      this.prevByte = 0; this.sync = false;
+      this.dirty.add(this.halftrack >> 1);
+      if ((this.via2.pcr & 0x0e) === 0x0e) this.cpu.v = 1;
+      this.via2.setFlag(0x02);
+      return;
+    }
     const b = track[this.headPos];
     this.headPos = (this.headPos + 1) % track.length;
     const inSync = b === 0xff && this.prevByte === 0xff;
@@ -139,8 +171,6 @@ export class Drive1541 implements Bus {
     this.sync = inSync;
     if (inSync) return;
     // byte ready: latch it, flag CA1 and, if enabled, pulse the CPU's SO pin (sets V)
-    const writeMode = (this.via2.pcr & 0xe0) === 0xc0;
-    if (writeMode) return;
     this.dataLatch = b;
     this.via2.latchA = b;
     if ((this.via2.pcr & 0x0e) === 0x0e) this.cpu.v = 1;

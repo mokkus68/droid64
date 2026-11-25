@@ -13,6 +13,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Cartucce .CRT**: normali 8K/16K/Ultimax, Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad (logica PLA completa con EXROM/GAME)
 - **1541 emulato** (con la ROM del drive caricata dall'utente): processore 6502 del drive, 2 KB di RAM, due VIA 6522, motore e testina, disco convertito in GCR con le zone di velocità reali, bus seriale ATN/CLK/DATA. C64 e drive avanzano insieme con precisione al ciclo, quindi funzionano anche i fastloader. Turbo automatico mentre il drive gira
 - **Drive virtuale veloce (device 8)**, in alternativa: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
+- **Scrittura su disco** con entrambi i drive: `SAVE` (anche `@0:` per sostituire), file `SEQ`/`PRG` aperti in scrittura, cancellazione `S:`, rinomina `R:`, formattazione `N:`. Con il 1541 emulato scrive il DOS del drive in GCR e i settori vengono ridecodificati nell'immagine D64. I dischi modificati restano salvati nel browser, si possono scaricare come `.d64` e si possono creare dischi vuoti
 - **Caricamento**: PRG, D64 e T64
 
 ## ROM
@@ -42,7 +43,8 @@ npm run build
 | `src/vdrive.ts` | drive virtuale veloce sul bus seriale del KERNAL |
 | `src/drive1541.ts` | 1541 emulato: CPU, memoria, meccanica, bus seriale |
 | `src/via.ts` | VIA 6522 |
-| `src/gcr.ts` | conversione D64 → GCR |
+| `src/gcr.ts` | conversione D64 ↔ GCR |
+| `src/d64write.ts` | scrittura su D64: BAM, directory, cancellazione, rinomina, formattazione |
 | `src/cartridge.ts` | cartucce .CRT e cambio di banco |
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
 | `src/vkbd.ts` | tastiera C64 a schermo |
@@ -63,7 +65,8 @@ I test che usano le ROM originali leggono la cartella indicata dalla variabile `
 ## Limiti noti
 - Temporizzazione per istruzione e rendering per riga: niente trucchi al singolo ciclo (bordi laterali, FLI)
 - Con il drive virtuale i fastloader non funzionano (compare un avviso): serve il 1541 emulato
-- Il 1541 emulato legge ma non scrive il disco (`SAVE` risponde `WRITE PROTECT ON`); la codifica GCR è a livello di byte, quindi le protezioni anticopia che dipendono dai singoli bit non sono riprodotte
+- La codifica GCR del 1541 emulato è a livello di byte: le protezioni anticopia che dipendono dai singoli bit non sono riprodotte
+- I file `.T64` sono di sola lettura
 - Cartucce `.CRT`: non sono supportati i tipi con freezer o hardware speciale (Action Replay, Final Cartridge III, Retro Replay…)
 
 ## Licenza

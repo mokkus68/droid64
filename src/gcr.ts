@@ -59,3 +59,59 @@ function trackOffset(track: number): number {
   for (let t = 1; t < track; t++) off += sectorsPerTrack(t) * 256;
   return off;
 }
+
+// ---- decoding (for writes made by the emulated drive) ----
+const DEC = new Int8Array(32).fill(-1);
+GCR.forEach((code, nibble) => { DEC[code] = nibble; });
+
+/** Decode `count` raw bytes from GCR starting at byte index `pos` of a circular track; null on invalid codes. */
+function decodeAt(track: Uint8Array, pos: number, count: number): number[] | null {
+  const out: number[] = [];
+  const len = track.length;
+  let bitBuf = 0, bits = 0, p = pos;
+  const nibbles: number[] = [];
+  while (nibbles.length < count * 2) {
+    while (bits < 5) { bitBuf = ((bitBuf << 8) | track[p % len]) & 0xffff; p++; bits += 8; }
+    const code = (bitBuf >> (bits - 5)) & 31;
+    bits -= 5;
+    const n = DEC[code];
+    if (n < 0) return null;
+    nibbles.push(n);
+  }
+  for (let i = 0; i < nibbles.length; i += 2) out.push((nibbles[i] << 4) | nibbles[i + 1]);
+  return out;
+}
+
+/**
+ * Scan a GCR track for header + data blocks and copy every valid sector back into the D64 image.
+ * Returns the number of sectors updated.
+ */
+export function gcrTrackToD64(track: Uint8Array, trackNo: number, img: Uint8Array): number {
+  const len = track.length;
+  if (!len) return 0;
+  // positions right after each sync mark
+  const starts: number[] = [];
+  for (let i = 0; i < len; i++) {
+    const prev = track[(i - 1 + len) % len], cur = track[i];
+    if (prev === 0xff && cur === 0xff) continue;
+    if (prev === 0xff && track[(i - 2 + len) % len] === 0xff) starts.push(i);
+  }
+  let updated = 0;
+  for (let k = 0; k < starts.length; k++) {
+    const h = decodeAt(track, starts[k], 8);
+    if (!h || h[0] !== 0x08) continue;
+    const sector = h[2], t = h[3];
+    if (t !== trackNo || sector >= sectorsPerTrack(t)) continue;
+    const next = starts[(k + 1) % starts.length];
+    const d = decodeAt(track, next, 260);
+    if (!d || d[0] !== 0x07) continue;
+    let sum = 0;
+    for (let i = 1; i <= 256; i++) sum ^= d[i];
+    if (sum !== d[257]) continue;
+    const off = trackOffset(t) + sector * 256;
+    if (off + 256 > img.length) continue;
+    img.set(d.slice(1, 257), off);
+    updated++;
+  }
+  return updated;
+}

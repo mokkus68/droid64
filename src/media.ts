@@ -74,7 +74,7 @@ export function parseD64(img: Uint8Array): DiskImage & { files: D64File[] } {
       const blocks = img[eo + 30] | (img[eo + 31] << 8);
       files.push({
         name: nameToString(rawName), rawName, type: typeName, blocks,
-        data: (type & 7) === 2 ? readChain(img[eo + 3], img[eo + 4]) : null,
+        data: (type & 7) >= 1 && (type & 7) <= 3 ? readChain(img[eo + 3], img[eo + 4]) : null,
       });
     }
     t = img[off]; s = img[off + 1];

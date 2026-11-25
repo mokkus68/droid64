@@ -6,6 +6,7 @@ import { OPEN_BASIC, OPEN_KERNAL, OPEN_CHARGEN } from './roms';
 import { DEMO } from './demo';
 import { buildKeyboard } from './vkbd';
 import { Cartridge } from './cartridge';
+import { blankD64 } from './d64write';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
@@ -332,6 +333,8 @@ function onDiskLoad(name: string, ok: boolean, start?: number) {
 let fastloaderWarned = false;
 function wireMachine() {
   c64.onDiskLoad = onDiskLoad;
+  c64.onDiskChanged = onDiskChanged;
+  c64.onDiskSave = onDiskSave;
   c64.onDriveActivity = () => flashDrive();
   c64.onFastloader = () => {
     if (fastloaderWarned) return;
@@ -353,7 +356,7 @@ function showDiskDirectory() {
 /** Load and start the first program on the disk: LOAD"*",8,1 then RUN (or SYS for machine code). */
 function runFirstProgram() {
   if (!disk) { toast('Nessun disco inserito'); return; }
-  const first = disk.files.find((f) => f.data);
+  const first = disk.files.find((f) => f.data && f.type === 'PRG');
   if (!first) { toast('Sul disco non ci sono programmi'); return; }
   startAudio();
   c64.reset();
@@ -413,16 +416,20 @@ async function handleFiles(files: FileList | File[]) {
       showCartridge();
       toast(`Cartuccia inserita: ${cart.name}`);
     } else if (name.endsWith('.d64') || data.length === 174848 || data.length === 175531 || data.length === 196608) {
-      disk = parseD64(data);
-      diskImage = data;
-      c64.mountDisk(disk, diskImage);
-      showDirectory(f.name);
-      const first = disk.files.find((x) => x.data);
-      toast(`Disco inserito: ${disk.files.length} file. Clicca un file per avviarlo.`);
-      if (first && disk.files.filter((x) => x.data).length === 1) runFile(first);
+      const saved = loadSavedDisk(f.name);
+      originalImage = data.slice();
+      const img = saved && saved.length === data.length ? saved : data;
+      insertD64(img, f.name, !!saved);
+      const first = disk!.files.find((x) => x.data && x.type === 'PRG');
+      toast(saved
+        ? `Disco inserito con le modifiche salvate in questo browser (${disk!.files.length} file). Per ripartire dal file originale usa “Torna all'originale”.`
+        : `Disco inserito: ${disk!.files.length} file. Clicca un file per avviarlo.`);
+      if (!disk) return;
+      if (first && disk.files.filter((x) => x.data && x.type === 'PRG').length === 1) runFile(first);
     } else if (name.endsWith('.t64')) {
       disk = parseT64(data);
       diskImage = null;
+      diskName = f.name; diskModified = false; originalImage = null;
       c64.mountDisk(disk, diskImage);
       showDirectory(f.name);
       const first = disk.files[0];
@@ -454,14 +461,17 @@ function showDirectory(fileName: string) {
   const box = $('directory');
   box.hidden = !disk;
   if (!disk) return;
-  $('dir-title').textContent = `${fileName} · “${disk.title.trim()}”`;
+  $('dir-title').textContent = `${fileName} · “${disk.title.trim()}” · ${disk.freeBlocks} blocchi liberi`;
+  $('dir-modified').hidden = !diskModified;
+  $('download-disk').hidden = !diskImage;
+  $('revert-disk').hidden = !(diskModified && originalImage);
   const ul = $('dir-list');
   ul.replaceChildren();
   for (const f of disk.files) {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.disabled = !f.data;
+    btn.disabled = !f.data || f.type !== 'PRG';
     btn.innerHTML = `<span class="blk">${f.blocks}</span><span class="nm"></span><span class="ty">${f.type}</span>`;
     (btn.querySelector('.nm') as HTMLElement).textContent = `"${f.name}"`;
     btn.addEventListener('click', () => runFile(f));
@@ -470,8 +480,137 @@ function showDirectory(fileName: string) {
   }
 }
 $('eject').addEventListener('click', () => {
-  disk = null; diskImage = null; c64.mountDisk(null); showDirectory(''); toast('Disco espulso');
+  c64.drive?.flushWrites();
+  disk = null; diskImage = null; originalImage = null; diskModified = false;
+  c64.mountDisk(null); showDirectory(''); toast('Disco espulso');
 });
+
+// ---------- writing to disk: keep changes, download, blank disks ----------
+let diskName = '';
+let diskModified = false;
+let originalImage: Uint8Array | null = null;
+const diskKey = (name: string) => 'c64.disk:' + name.toLowerCase();
+
+function loadSavedDisk(name: string): Uint8Array | null {
+  const b64 = store.get(diskKey(name));
+  if (!b64) return null;
+  try { return b64ToBytes(b64); } catch { return null; }
+}
+
+function insertD64(img: Uint8Array, name: string, modified: boolean) {
+  disk = parseD64(img);
+  diskImage = img;
+  diskName = name;
+  diskModified = modified;
+  c64.mountDisk(disk, diskImage);
+  showDirectory(name);
+}
+
+/** Called whenever the emulated drive writes to the mounted disk. */
+function onDiskChanged() {
+  if (!diskImage) return;
+  disk = c64.disk ?? parseD64(diskImage);
+  diskModified = true;
+  showDirectory(diskName);
+  flashDrive();
+  store.set(diskKey(diskName), bytesToB64(diskImage));
+  if (store.get(diskKey(diskName)) === null) toast('Spazio del browser esaurito: scarica il disco con “Scarica .d64” per non perdere le modifiche');
+  else if (c64.drive) toast('Disco aggiornato dal 1541: le modifiche sono salvate in questo browser');
+  renderSavedDisks();
+}
+
+function onDiskSave(name: string, code: number) {
+  if (code === 0) toast(`Salvato su disco: ${name}`);
+  else if (code === 63) toast(`Sul disco esiste già “${name}”. Per sostituirlo: SAVE"@0:${name}",8`);
+  else if (code === 26) toast('Questo disco è protetto da scrittura (i file .T64 non si possono modificare)');
+  else toast('Disco pieno: il file non è stato salvato');
+}
+
+$('download-disk').addEventListener('click', () => {
+  if (!diskImage) return;
+  c64.drive?.flushWrites();
+  const name = /\.d64$/i.test(diskName) ? diskName : diskName.replace(/\.[^.]*$/, '') + '.d64';
+  try {
+    const url = URL.createObjectURL(new Blob([diskImage], { type: 'application/octet-stream' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast(`Scaricamento di ${name} avviato (se non parte, apri l'emulatore dal sito GitHub Pages)`);
+  } catch {
+    toast('Il browser ha bloccato lo scaricamento');
+  }
+});
+
+$('revert-disk').addEventListener('click', () => {
+  if (!originalImage) return;
+  store.del(diskKey(diskName));
+  c64.drive?.flushWrites();
+  c64.mountDisk(null);
+  insertD64(originalImage.slice(), diskName, false);
+  renderSavedDisks();
+  toast('Ripristinato il disco originale: le modifiche salvate nel browser sono state cancellate');
+});
+
+$('new-disk').addEventListener('click', () => {
+  c64.drive?.flushWrites();
+  c64.mountDisk(null);
+  let n = 1;
+  while (store.get(diskKey(`disco${n}.d64`))) n++;
+  originalImage = null;
+  insertD64(blankD64(`DISCO ${n}`, String(n).padStart(2, '0')), `disco${n}.d64`, false);
+  store.set(diskKey(diskName), bytesToB64(diskImage!));
+  renderSavedDisks();
+  toast(`Disco vuoto “disco${n}.d64” inserito nel drive 8. Salva con SAVE"NOME",8`);
+  screenWrap.focus();
+});
+
+window.addEventListener('pagehide', () => { c64.drive?.flushWrites(); });
+
+/** Disks kept in this browser (blank disks and modified ones), to reinsert after a reload. */
+function renderSavedDisks() {
+  const names: string[] = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k?.startsWith('c64.disk:')) names.push(k.slice(9));
+    }
+  } catch { /* storage unavailable */ }
+  names.sort();
+  const box = $('saved-disks');
+  box.hidden = !names.length;
+  const ul = $('saved-list');
+  ul.replaceChildren();
+  for (const n of names) {
+    const li = document.createElement('li');
+    const open = document.createElement('button');
+    open.type = 'button'; open.className = 'saved-open'; open.textContent = n;
+    open.title = 'Inserisci nel drive 8';
+    open.addEventListener('click', () => {
+      const img = loadSavedDisk(n);
+      if (!img) { toast('Questo disco salvato non si può leggere'); return; }
+      c64.drive?.flushWrites();
+      c64.mountDisk(null);
+      originalImage = null;
+      insertD64(img, n, false);
+      toast(`Disco “${n}” inserito nel drive 8`);
+      screenWrap.focus();
+    });
+    const del = document.createElement('button');
+    del.type = 'button'; del.className = 'saved-del'; del.textContent = 'Elimina';
+    del.setAttribute('aria-label', `Elimina ${n} da questo browser`);
+    let armed = false;
+    del.addEventListener('click', () => {
+      if (!armed) { armed = true; del.textContent = 'Conferma'; setTimeout(() => { armed = false; del.textContent = 'Elimina'; }, 3000); return; }
+      store.del(diskKey(n));
+      renderSavedDisks();
+      toast(`“${n}” eliminato da questo browser`);
+    });
+    li.append(open, del);
+    ul.append(li);
+  }
+}
+renderSavedDisks();
 
 const fileInput = $<HTMLInputElement>('file');
 fileInput.addEventListener('change', () => { if (fileInput.files) handleFiles(fileInput.files); fileInput.value = ''; });

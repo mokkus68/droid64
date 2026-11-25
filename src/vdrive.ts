@@ -4,7 +4,8 @@
 // the command channel 15 and block reads. Fastloaders that upload their own code to the
 // drive and bit-bang the bus cannot work without a real 1541 emulation.
 
-import { D64File, DiskImage, matchName, buildDirectoryListing } from './media';
+import { D64File, DiskImage, matchName, buildDirectoryListing, parseD64 } from './media';
+import { writeFile, scratch, rename, format, FileType } from './d64write';
 
 type Disk = DiskImage & { files: D64File[] };
 
@@ -12,6 +13,7 @@ interface Channel {
   data: Uint8Array | null;   // bytes to send to the C64
   pos: number;
   write: number[] | null;    // bytes received from the C64 (files opened for writing)
+  name?: Uint8Array; type?: FileType; replace?: boolean;
 }
 
 const ascii = (s: string) => Array.from(s, (c) => c.charCodeAt(0));
@@ -32,6 +34,8 @@ export class VirtualDrive {
   /** set when a program tried to run its own code in the drive (a fastloader) */
   onFastloader: () => void = () => {};
   onActivity: (what: string) => void = () => {};
+  /** the disk image was modified (file saved, scratched, renamed, formatted) */
+  onDiskChanged: () => void = () => {};
 
   constructor(public disk: Disk, image: Uint8Array | null) {
     this.image = image;
@@ -138,7 +142,9 @@ export class VirtualDrive {
     const modes = parts.slice(1).map((p) => String.fromCharCode(p[0] ?? 0));
     const writing = ch === 1 || modes.includes('W') || modes.includes('A');
     if (writing) {
-      this.channels[ch] = { data: null, pos: 0, write: [] };
+      if (!this.image) { this.channels[ch] = null; this.setStatus(26, ' WRITE PROTECT ON'); return; }
+      const type: FileType = modes.includes('S') ? 'SEQ' : modes.includes('U') ? 'USR' : modes.includes('P') || ch === 1 ? 'PRG' : 'SEQ';
+      this.channels[ch] = { data: null, pos: 0, write: [], name: fname.slice(), type, replace: nameBytes[0] === 0x40 };
       this.setStatus(0, ' OK');
       return;
     }
@@ -152,7 +158,37 @@ export class VirtualDrive {
     this.setStatus(0, ' OK');
   }
 
+  /** Save a whole file (used by the KERNAL SAVE hook as well). Returns the DOS status code. */
+  saveFile(name: Uint8Array, data: Uint8Array, type: FileType = 'PRG'): number {
+    if (!this.image) { this.setStatus(26, ' WRITE PROTECT ON'); return 26; }
+    let replace = false;
+    if (name[0] === 0x40) { replace = true; name = name.subarray(1); }
+    const colon = name.indexOf(0x3a);
+    if (colon >= 0 && colon <= 1) name = name.subarray(colon + 1);
+    const comma = name.indexOf(0x2c);
+    if (comma >= 0) name = name.subarray(0, comma);
+    const code = writeFile(this.image, name, type, data, replace);
+    this.afterWrite(code);
+    return code;
+  }
+
+  private afterWrite(code: number) {
+    if (code === 0) this.setStatus(0, ' OK');
+    else if (code === 63) this.setStatus(63, ' FILE EXISTS');
+    else if (code === 62) this.setStatus(62, ' FILE NOT FOUND');
+    else this.setStatus(72, ' DISK FULL');
+    if (this.image && code === 0) {
+      this.disk = parseD64(this.image);
+      this.onDiskChanged();
+    }
+  }
+
   private close(ch: number) {
+    const c = this.channels[ch];
+    if (c?.write && c.name && this.image) {
+      const code = writeFile(this.image, c.name, c.type ?? 'SEQ', Uint8Array.from(c.write), !!c.replace);
+      this.afterWrite(code);
+    }
     this.channels[ch] = null;
     if (ch === 15) this.channels.fill(null);
   }
@@ -216,7 +252,39 @@ export class VirtualDrive {
       return;
     }
     if (/^UJ|^UI|^U:|^U9|^U;/.test(str)) { this.setStatus(73, 'CBM DOS V2.6 1541'); return; }
-    if (/^I|^V|^S|^R|^N|^C|^P|^B-[AFW]|^U2|^UB/.test(str) || str === '') { this.setStatus(0, ' OK'); return; }
+    const arg = (from: number) => { const b = Uint8Array.from(bytes.slice(from)); const c = b.indexOf(0x3a); return c >= 0 ? b.subarray(c + 1) : b; };
+    if (/^S/.test(str)) { // S0:NAME[,NAME2...]
+      if (!this.image) { this.setStatus(26, ' WRITE PROTECT ON'); return; }
+      let n = 0;
+      for (const part of splitComma(arg(1))) n += scratch(this.image, part);
+      this.setStatus(1, ' FILES SCRATCHED', n, 0);
+      this.statusBytes = null;
+      if (n) { this.disk = parseD64(this.image); this.onDiskChanged(); }
+      return;
+    }
+    if (/^R/.test(str)) { // R0:NEW=OLD
+      if (!this.image) { this.setStatus(26, ' WRITE PROTECT ON'); return; }
+      const a = arg(1); const eq = a.indexOf(0x3d);
+      if (eq < 0) { this.setStatus(30, ' SYNTAX ERROR'); return; }
+      let old = a.subarray(eq + 1); const c = old.indexOf(0x3a); if (c >= 0 && c <= 1) old = old.subarray(c + 1);
+      this.afterWrite(rename(this.image, a.subarray(0, eq), old));
+      return;
+    }
+    if (/^N/.test(str)) { // N0:NAME,ID
+      if (!this.image) { this.setStatus(26, ' WRITE PROTECT ON'); return; }
+      const parts = splitComma(arg(1));
+      format(this.image, parts[0] ?? new Uint8Array(0), parts[1] ?? Uint8Array.from([0x30, 0x30]));
+      this.afterWrite(0);
+      return;
+    }
+    if (/^I|^V|^C|^P|^B-[AFW]|^U2|^UB/.test(str) || str === '') { this.setStatus(0, ' OK'); return; }
     this.setStatus(31, ' SYNTAX ERROR');
   }
+}
+
+function splitComma(b: Uint8Array): Uint8Array[] {
+  const out: Uint8Array[] = [];
+  let start = 0;
+  for (let i = 0; i <= b.length; i++) if (i === b.length || b[i] === 0x2c) { if (i > start) out.push(b.subarray(start, i)); start = i + 1; }
+  return out;
 }
