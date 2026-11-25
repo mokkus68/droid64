@@ -80,6 +80,9 @@ body[data-drag="1"] .drop { border-color: var(--vic-blue); background: rgba(112,
 .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .seg button { padding: 8px 6px; }
 .seg2 { grid-template-columns: repeat(2, 1fr); }
+.seg4 { grid-template-columns: repeat(4, 1fr); }
+.seg button small { display: block; font-size: 10px; color: inherit; opacity: .75; margin-top: 2px; }
+.field-label { font-size: 12px; color: var(--muted); }
 .check { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--beige); cursor: pointer; }
 .check input { accent-color: var(--vic-blue); width: 16px; height: 16px; }
 .warp-badge { position: absolute; top: 12px; right: 12px; font-family: var(--font-mono); font-size: 11px; background: #c8423b; color: #fff; padding: 2px 8px; border-radius: 3px; display: none; }
@@ -390,6 +393,18 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-joy="2" aria-pressed="true">Porta 2</button>
         </div>
         <p>Frecce per muovere, <kbd>Ctrl</kbd> o <kbd>Alt</kbd> per sparare. Funziona anche un gamepad. Su telefono usa il joystick a schermo sotto l'immagine. Se un gioco non risponde, prova l'altra porta.</p>
+      </section>
+
+      <section class="panel" id="expansions">
+        <h2>Espansioni</h2>
+        <div class="field-label">Espansione di memoria (REU)</div>
+        <div class="seg seg4" role="group" aria-label="REU">
+          <button type="button" data-reu="0" aria-pressed="true">Nessuna</button>
+          <button type="button" data-reu="128" aria-pressed="false">1700<small>128K</small></button>
+          <button type="button" data-reu="256" aria-pressed="false">1764<small>256K</small></button>
+          <button type="button" data-reu="512" aria-pressed="false">1750<small>512K</small></button>
+        </div>
+        <p>La REU aggiunge memoria a cui il C64 accede con trasferimenti DMA dai registri a $DF00. La usano GEOS e alcune demo; il contenuto resta anche dopo un reset.</p>
       </section>
 
       <section class="panel" id="rom-status" data-original="0">

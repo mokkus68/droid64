@@ -71,6 +71,7 @@ function rebuildMachine() {
   wireMachine();
   if (cartridge) c64.insertCartridge(cartridge);
   if (tape) c64.insertTape(tape);
+  c64.setReu(reuSize);
   applyDriveMode();
   updateRomStatus();
 }
@@ -800,6 +801,23 @@ tapeTurboBox.addEventListener('change', () => {
   store.set('c64.tapeturbo', tapeTurbo ? '1' : '0');
   toast(tapeTurbo ? 'Nastro accelerato durante i caricamenti' : 'Nastro a velocità reale: come un Datasette vero (un gioco può richiedere diversi minuti)');
 });
+
+// ---------- expansions: REU ----------
+let reuSize = Number(store.get('c64.reu') ?? '0');
+function setReuSize(kb: number) {
+  reuSize = kb;
+  store.set('c64.reu', String(kb));
+  c64.setReu(kb);
+  c64.reset();
+  if (disk) c64.mountDisk(disk, diskImage);
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.setAttribute('aria-pressed', String(Number(b.dataset.reu) === kb));
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.addEventListener('click', () => {
+  setReuSize(Number(b.dataset.reu));
+  toast(reuSize ? `REU da ${reuSize} KB collegata: il C64 è stato riavviato` : 'REU scollegata: il C64 è stato riavviato');
+});
+c64.setReu(reuSize);
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.setAttribute('aria-pressed', String(Number(b.dataset.reu) === reuSize));
 
 // ---------- controls ----------
 $('reset').addEventListener('click', () => { c64.reset(); if (disk) c64.mountDisk(disk, diskImage); toast('Reset'); screenWrap.focus(); });

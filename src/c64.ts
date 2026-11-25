@@ -9,6 +9,7 @@ import { Cartridge } from './cartridge';
 import { VirtualDrive } from './vdrive';
 import { Drive1541 } from './drive1541';
 import { Tape } from './tape';
+import { REU } from './reu';
 
 export interface Roms { basic: Uint8Array; kernal: Uint8Array; chargen: Uint8Array; }
 
@@ -101,6 +102,7 @@ export class C64 implements Bus {
     for (let i = 0; i < 65536; i++) this.ram[i] = (i & 0x40) ? 0xff : 0x00;
     this.colorRam.fill(0);
     this.cart?.reset();
+    this.reu?.reset();
     this.vdrive?.reset();
     if (this.drive) { this.drive.reset(); this.drive.resetClock(this.now); }
     this.portDdr = 0x2f; this.portData = 0x37; this.updatePort();
@@ -177,6 +179,7 @@ export class C64 implements Bus {
     }
     const t = this.map[addr >> 12];
     if (t === M_IO) { this.ioWrite(addr, v); return; }
+    if (addr === 0xff00 && this.reu) { this.reu.ff00Written(); this.takeDmaStall(); }
     if (this.ultimax && t !== M_RAM) return; // cartridge ROM / open bus in Ultimax mode
     this.ram[addr] = v;
   }
@@ -198,7 +201,9 @@ export class C64 implements Bus {
         if (this.drive && (addr & 0xf) === 0) this.drive.runUntil(this.instrStart + 3);
         return this.cia2.read(addr);
       case 0xe: return this.cart ? this.cart.io1Read(addr) : 0xff;
-      default: return this.cart ? this.cart.io2Read(addr) : 0xff;
+      default:
+        if (this.reu) return this.reu.read(addr);
+        return this.cart ? this.cart.io2Read(addr) : 0xff;
     }
   }
 
@@ -219,7 +224,10 @@ export class C64 implements Bus {
         break;
       }
       case 0xe: this.cart?.io1Write(addr, v); break;
-      case 0xf: this.cart?.io2Write(addr, v); break;
+      case 0xf:
+        if (this.reu) { this.reu.write(addr, v); this.takeDmaStall(); }
+        else this.cart?.io2Write(addr, v);
+        break;
     }
   }
 
@@ -308,6 +316,24 @@ export class C64 implements Bus {
   private traps = new Map<number, number>();
   /** true when the full virtual drive (OPEN, GET#, command channel…) is active, not just LOAD */
   serialTrapsActive = false;
+
+  // ---------- RAM Expansion Unit ----------
+  reu: REU | null = null;
+  /** Plug in a REU of the given size in KB (128, 256 or 512), or remove it with 0. */
+  setReu(sizeKB: number) {
+    this.reu = sizeKB ? new REU(sizeKB, { read: (a) => this.read(a), write: (a, v) => this.write(a, v) }) : null;
+    if (this.reu) this.reu.onIrq = (on) => { if (on) this.cpu.irqLines |= 8; else this.cpu.irqLines &= ~8; };
+    else this.cpu.irqLines &= ~8;
+  }
+  /** DMA halts the CPU: charge the transfer time to the current line's cycle budget. */
+  private takeDmaStall() {
+    const n = this.reu!.stall;
+    if (!n) return;
+    this.reu!.stall = 0;
+    this.cycleBudget -= n;
+    this.now += n;
+    this.cia1.clock(n); this.cia2.clock(n);
+  }
 
   // ---------- cassette ----------
   tape: Tape | null = null;

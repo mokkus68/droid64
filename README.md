@@ -15,6 +15,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Drive virtuale veloce (device 8)**, in alternativa: risponde alle routine del bus seriale del KERNAL, quindi funzionano `LOAD`, `OPEN`/`GET#`/`INPUT#`/`PRINT#`, il canale comandi 15 (stato, `I`, `UI`, `M-R`, `M-W`), la lettura diretta dei settori (`U1`, `B-R`, `B-P`) e la directory `$`. Con le Open ROMs funziona solo `LOAD`
 - **Scrittura su disco** con entrambi i drive: `SAVE` (anche `@0:` per sostituire), file `SEQ`/`PRG` aperti in scrittura, cancellazione `S:`, rinomina `R:`, formattazione `N:`. Con il 1541 emulato scrive il DOS del drive in GCR e i settori vengono ridecodificati nell'immagine D64. I dischi modificati restano salvati nel browser, si possono scaricare come `.d64` e si possono creare dischi vuoti
 - **Nastri .TAP** (v0 e v1): registratore emulato a livello di impulsi sul pin FLAG del CIA1, con tasto PLAY e motore sulla porta `$01`, quindi funzionano sia il caricamento del KERNAL sia i turbo loader. Avvio automatico, turbo mentre il motore gira (disattivabile nel pannello del registratore per avere la velocità reale), contagiri del Datasette (non lineare come la bobina vera) con tasto di azzeramento. Salvataggio su nastro: con RECORD premuto gli impulsi che il C64 scrive (bit 3 di `$01`) vengono registrati in formato TAP, scaricabili e salvati nel browser
+- **REU** 1700 (128 KB), 1764 (256 KB) e 1750 (512 KB): registri a `$DF00`, trasferimenti stash, fetch, swap e verify, autoload, indirizzi fissi, interrupt e avvio con scrittura su `$FF00`
 - **Caricamento**: PRG, D64, T64 e TAP
 
 ## ROM
@@ -49,6 +50,7 @@ La versione (`version` in `package.json`) e la data di compilazione compaiono in
 | `src/via.ts` | VIA 6522 |
 | `src/gcr.ts` | conversione D64 ↔ GCR |
 | `src/d64write.ts` | scrittura su D64: BAM, directory, cancellazione, rinomina, formattazione |
+| `src/reu.ts` | espansione di memoria REU |
 | `src/tape.ts` | registratore (Datasette) da file .TAP |
 | `src/cartridge.ts` | cartucce .CRT e cambio di banco |
 | `src/keyboard.ts` | mappatura tastiera PC → matrice C64 |
