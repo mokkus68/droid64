@@ -1045,6 +1045,33 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-sid]')) b.ad
 });
 setSidModel(sidModel);
 
+// TV effect: the scanline period follows the size the C64 picture is actually shown at
+let crtOn = store.get('c64.crt') === '1';
+function layoutCrt() {
+  const o = $('crt');
+  const box = canvas.getBoundingClientRect(), wrap = screenWrap.getBoundingClientRect();
+  // with object-fit: contain (desktop full screen) the picture is letterboxed inside the canvas box
+  const scale = Math.min(box.width / (SCREEN_W * 360 / 384), box.height / SCREEN_H);
+  const fitted = getComputedStyle(canvas).objectFit === 'contain';
+  const w = fitted ? SCREEN_W * 360 / 384 * scale : box.width, h = fitted ? SCREEN_H * scale : box.height;
+  o.style.left = `${box.left - wrap.left + (box.width - w) / 2}px`;
+  o.style.top = `${box.top - wrap.top + (box.height - h) / 2}px`;
+  o.style.width = `${w}px`; o.style.height = `${h}px`;
+  o.style.setProperty('--line', `${h / SCREEN_H}px`);
+}
+function setCrt(on: boolean) {
+  crtOn = on;
+  store.set('c64.crt', on ? '1' : '0');
+  screenWrap.classList.toggle('crt', on);
+  $<HTMLInputElement>('crt-on').checked = on;
+  if (on) layoutCrt();
+}
+$<HTMLInputElement>('crt-on').addEventListener('change', (e) => setCrt((e.target as HTMLInputElement).checked));
+new ResizeObserver(() => { if (crtOn) layoutCrt(); }).observe(canvas);
+window.addEventListener('resize', () => { if (crtOn) layoutCrt(); });
+document.addEventListener('fullscreenchange', () => setTimeout(() => { if (crtOn) layoutCrt(); }, 50));
+setCrt(crtOn);
+
 // ---------- snapshots ----------
 const SNAP_FORMAT = 'droid64-snapshot';
 const romPrint = () => fingerprint(romInfo.roms.basic, romInfo.roms.kernal, romInfo.roms.chargen);
@@ -1276,6 +1303,7 @@ function setFsMode(mode: string) {
   for (const b of document.querySelectorAll<HTMLButtonElement>('[data-fsmode]')) b.setAttribute('aria-pressed', String(b.dataset.fsmode === mode));
 }
 async function enterFullscreen() {
+  setTimeout(() => { if (crtOn) layoutCrt(); }, 100);
   monitor.classList.add('fs');
   document.body.classList.add('fs-open');
   $('fullscreen').setAttribute('aria-pressed', 'true');
@@ -1294,6 +1322,7 @@ function showMouse() {
 monitor.addEventListener('mousemove', () => { if (monitor.classList.contains('fs')) showMouse(); });
 for (const b of document.querySelectorAll<HTMLButtonElement>('.fs-exit-float')) b.addEventListener('click', (e) => { e.stopPropagation(); leaveFullscreen(); });
 function leaveFullscreen() {
+  setTimeout(() => { if (crtOn) layoutCrt(); }, 100);
   monitor.classList.remove('fs');
   document.body.classList.remove('fs-open');
   $('fullscreen').setAttribute('aria-pressed', 'false');
