@@ -289,7 +289,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
     <div class="status">
       <span id="audio-state" data-on="0">Audio spento</span>
       <span>Velocità <span id="speed">100%</span></span>
-      <span>PAL · 985 248 Hz</span>
+      <span id="video-status">PAL · 985 248 Hz</span>
       <span class="version" id="version" title="Compilato il {{BUILT}}">v{{VERSION}}</span>
     </div>
   </header>
@@ -497,6 +497,12 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <button type="button" data-sid="8580" aria-pressed="false">8580<small>C64C, C128</small></button>
         </div>
         <p>Le musiche suonano come sul modello per cui sono state scritte: quasi tutte quelle degli anni '80 per il 6581. Il 6581 ha un filtro più scuro e fa sentire le voci campionate dei giochi; l'8580 ha un filtro più lineare.</p>
+        <div class="field-label">Sistema video</div>
+        <div class="seg seg2" role="group" aria-label="Sistema video">
+          <button type="button" data-video="pal" aria-pressed="true">PAL<small>Europa · 50 Hz</small></button>
+          <button type="button" data-video="ntsc" aria-pressed="false">NTSC<small>America · 60 Hz</small></button>
+        </div>
+        <p>I giochi americani sono fatti per il C64 NTSC: più veloce (60 schermate al secondo) e con meno righe. Su PAL vanno più lenti o sbagliano la grafica; vale anche il contrario.</p>
         <label class="check" for="crt-on"><input type="checkbox" id="crt-on"> Effetto televisore: linee di scansione, pixel morbidi e bordi scuri</label>
       </section>
 
@@ -556,7 +562,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       </section>
     </aside>
   </div>
-  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Action Replay e Final Cartridge III (con pulsante Freeze), Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
+  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. C64 PAL o NTSC: CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Action Replay e Final Cartridge III (con pulsante Freeze), Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>

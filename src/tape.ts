@@ -21,6 +21,9 @@ export class Tape {
   onEdge: () => void = () => {};
   /** C64 cycles of tape that have passed the head since the start (drives the counter) */
   elapsed = 0;
+  /** C64 clock the tape is played on, and the clock the TAP file was recorded for */
+  clockHz = 985248;
+  private tapClock = 985248;
   private counterZero = 0;
   onEnd: () => void = () => {};
 
@@ -32,6 +35,8 @@ export class Tape {
     const size = img[16] | (img[17] << 8) | (img[18] << 16) | (img[19] << 24);
     this.data = img.subarray(20, Math.min(img.length, 20 + (size >>> 0 || img.length)));
     this.name = name;
+    // byte 13 of a TAP header: 0 = PAL C64, 1 = NTSC C64
+    this.tapClock = img[13] === 1 ? 1022727 : 985248;
   }
 
   get length() { return this.data.length; }
@@ -48,7 +53,7 @@ export class Tape {
    */
   get rawCounter() {
     const D = 1.27e-5, RMIN = 1.07e-2, V = 4.76e-2, G = 0.525;
-    const seconds = this.elapsed / 985248;
+    const seconds = this.elapsed / this.clockHz;
     return G * (Math.sqrt(seconds * V / D / Math.PI + (RMIN * RMIN) / (D * D)) - RMIN / D);
   }
   get counter() { return ((Math.floor(this.rawCounter) - this.counterZero) % 1000 + 1000) % 1000; }
@@ -117,12 +122,13 @@ export class Tape {
   /** Length in C64 cycles of the next pulse, advancing the position. */
   private nextPulse(): number {
     const d = this.data;
+    const scale = this.clockHz / this.tapClock; // same real time on a machine with another clock
     const v = d[this.pos++];
-    if (v !== 0) return v * 8;
+    if (v !== 0) return v * 8 * scale;
     if (this.version === 0) return 256 * 8 * 10; // overflow: a long silence
     const n = d[this.pos] | (d[this.pos + 1] << 8) | (d[this.pos + 2] << 16);
     this.pos += 3;
-    return n || 256 * 8;
+    return (n || 256 * 8) * scale;
   }
 
   /** Advance the tape by n cycles while the motor runs. */

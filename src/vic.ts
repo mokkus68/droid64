@@ -25,6 +25,17 @@ export class VIC {
   raster = 0;
   rasterCompare = 0;
   irqFlags = 0;
+  /** video standard: PAL 312 lines × 63 cycles, NTSC 263 lines × 65 cycles */
+  linesPerFrame = LINES_PER_FRAME;
+  cyclesPerLine = CYCLES_PER_LINE;
+  /** sprite X positions per line (PAL 504, NTSC 520) */
+  private lineWidth = 504;
+  setStandard(ntsc: boolean) {
+    this.linesPerFrame = ntsc ? 263 : 312;
+    this.cyclesPerLine = ntsc ? 65 : 63;
+    this.lineWidth = ntsc ? 520 : 504;
+    if (this.raster >= this.linesPerFrame) this.raster = 0;
+  }
   irqMask = 0;
   sprSprColl = 0;
   sprBgColl = 0;
@@ -136,9 +147,12 @@ export class VIC {
     if (fbY >= 0 && fbY < SCREEN_H) this.renderLine(raster, fbY);
 
     this.raster++;
-    if (this.raster >= LINES_PER_FRAME) {
+    if (this.raster >= this.linesPerFrame) {
       this.raster = 0;
       this.displayEnabledThisFrame = false;
+      // NTSC has fewer lines than the picture: paint the rows it never reaches with the border
+      const last = this.linesPerFrame - FIRST_VISIBLE_LINE;
+      if (last < SCREEN_H) this.frameBuffer.fill(PALETTE[r[0x20] & 15], last * SCREEN_W);
       return true;
     }
     return false;
@@ -270,7 +284,7 @@ export class VIC {
       if (!data) continue;
       const sx = r[i * 2] | ((r[0x10] & bit) ? 256 : 0);
       let x0 = sx + 8; // to framebuffer coords
-      if (sx >= 0x1f8) x0 = sx - 504 + 8; // wrap (504 wide line)
+      if (sx >= this.lineWidth - 8) x0 = sx - this.lineWidth + 8; // wrap at the end of the line
       const xexp = r[0x1d] & bit;
       const color = r[0x27 + i] & 15;
       const multi = r[0x1c] & bit;

@@ -49,6 +49,7 @@ export class KeyboardMapper {
   private down = new Map<string, Mapping>();
   private order: string[] = [];
   private downFrame = new Map<string, number>();
+  private upFrame = new Map<string, number>();
   private queue: { code: string; map: Mapping | null }[] = [];
   private frame = 0;
 
@@ -96,6 +97,8 @@ export class KeyboardMapper {
       const ev = this.queue[0];
       if (ev.map) {
         if (pressedThisFrame) break;
+        // the same key pressed again: keep it visibly released for two frames first
+        if (this.frame - (this.upFrame.get(ev.code) ?? -99) < 2) break;
         this.down.set(ev.code, ev.map);
         this.downFrame.set(ev.code, this.frame);
         this.order = this.order.filter((c) => c !== ev.code);
@@ -104,6 +107,7 @@ export class KeyboardMapper {
       } else {
         if (this.frame - (this.downFrame.get(ev.code) ?? -99) < 3) break;
         this.down.delete(ev.code);
+        this.upFrame.set(ev.code, this.frame);
         this.order = this.order.filter((c) => c !== ev.code);
       }
       this.queue.shift();

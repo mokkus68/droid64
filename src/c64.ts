@@ -20,6 +20,7 @@ const M_RAM = 0, M_BASIC = 1, M_KERNAL = 2, M_IO = 3, M_CHAR = 4, M_ROML = 5, M_
 
 export const JOY_UP = 1, JOY_DOWN = 2, JOY_LEFT = 4, JOY_RIGHT = 8, JOY_FIRE = 16;
 export const CLOCK_HZ = 985248;
+export const NTSC_CLOCK_HZ = 1022727;
 export const FRAME_HZ = CLOCK_HZ / (CYCLES_PER_LINE * LINES_PER_FRAME);
 
 export class C64 implements Bus {
@@ -242,17 +243,50 @@ export class C64 implements Bus {
     }
   }
 
-  /** Run one full video frame (312 raster lines). */
-  runFrame() {
+  // ---------- video standard ----------
+  ntsc = false;
+  get clockHz() { return this.ntsc ? NTSC_CLOCK_HZ : CLOCK_HZ; }
+  get frameHz() { return this.clockHz / (this.vic.cyclesPerLine * this.vic.linesPerFrame); }
+  /** Switch between a PAL (Europe) and an NTSC (America) C64; the machine is reset. */
+  setStandard(ntsc: boolean) {
+    this.ntsc = ntsc;
+    this.vic.setStandard(ntsc);
+    this.sid.setClock(this.clockHz);
+    this.cia1.framesPerTenth = this.cia2.framesPerTenth = ntsc ? 6 : 5;
+    for (const d of this.realDrives()) d.perC64 = 1000000 / this.clockHz;
+    if (this.tape) this.tape.clockHz = this.clockHz;
+    this.reset();
+  }
+
+  // ---------- run loop (with breakpoints and single steps for the monitor) ----------
+  breakpoints = new Set<number>();
+  /** set when a breakpoint stopped the last runFrame() */
+  breakHit = false;
+  private lineStarted = false;
+  private stepLimit = 0;
+  private skipBreak = false;
+
+  /**
+   * Run until the end of the current video frame. Returns false if it stopped early
+   * (breakpoint or single step); calling it again continues exactly where it stopped.
+   */
+  runFrame(): boolean {
     const cpu = this.cpu, vic = this.vic, cia1 = this.cia1, cia2 = this.cia2, sid = this.sid;
-    for (let line = 0; line < LINES_PER_FRAME; line++) {
-      const stolen = vic.startLine();
-      if (stolen) { cia1.clock(stolen); cia2.clock(stolen); if (this.tape?.playing && this.tape.motor) this.tape.clock(stolen); }
-      this.cycleBudget += CYCLES_PER_LINE - stolen;
-      this.now += stolen;
+    const bps = this.breakpoints;
+    this.breakHit = false;
+    for (;;) {
+      if (!this.lineStarted) {
+        const stolen = vic.startLine();
+        if (stolen) { cia1.clock(stolen); cia2.clock(stolen); if (this.tape?.playing && this.tape.motor) this.tape.clock(stolen); }
+        this.cycleBudget += vic.cyclesPerLine - stolen;
+        this.now += stolen;
+        this.lineStarted = true;
+      }
       const drive = this.drive, drive9 = this.drive9;
       const tape = this.tape && this.tape.playing && this.tape.motor ? this.tape : null; // also counts while recording
       while (this.cycleBudget > 0) {
+        if (bps.size && bps.has(cpu.pc) && !this.skipBreak) { this.breakHit = true; return false; }
+        this.skipBreak = false;
         this.instrStart = this.now;
         const c = cpu.step();
         this.cycleBudget -= c;
@@ -260,14 +294,26 @@ export class C64 implements Bus {
         cia1.clock(c); cia2.clock(c);
         if (drive) { drive.runUntil(this.now); if (drive9) drive9.runUntil(this.now); }
         if (tape) tape.clock(c);
+        if (this.stepLimit > 0 && --this.stepLimit === 0) return false;
       }
-      sid.clock(CYCLES_PER_LINE);
-      vic.endLine();
+      sid.clock(vic.cyclesPerLine);
+      this.lineStarted = false;
+      if (vic.endLine()) break;
     }
     cia1.tickTOD(); cia2.tickTOD();
     this.frameCount++;
     this.feedKeyboardBuffer();
+    return true;
   }
+
+  /** Execute exactly one instruction (or interrupt entry). */
+  stepInstruction() {
+    this.stepLimit = 1;
+    this.skipBreak = true;
+    while (this.stepLimit > 0) this.runFrame();
+  }
+  /** Continue after a breakpoint without stopping again on the same instruction. */
+  resumeFromBreak() { this.skipBreak = true; }
 
   /** NMI from the RESTORE key */
   restore() { this.cpu.triggerNMI(); }
@@ -382,6 +428,7 @@ export class C64 implements Bus {
   tape: Tape | null = null;
   insertTape(tape: Tape | null) {
     this.tape = tape;
+    if (tape) tape.clockHz = this.clockHz;
     if (tape) tape.onEdge = () => this.cia1.flag();
     this.updatePort();
   }
@@ -418,6 +465,7 @@ export class C64 implements Bus {
 
   private makeDrive(rom: Uint8Array, device: number, image: Uint8Array | null): Drive1541 {
     const d = new Drive1541(rom, device);
+    d.perC64 = 1000000 / this.clockHz;
     d.c64Lines = () => this.iecLines();
     d.otherPulls = (atn) => {
       let clk = false, data = false;
@@ -447,7 +495,7 @@ export class C64 implements Bus {
   // ---------- snapshots ----------
   /** fields never saved: ROMs, media (saved separately), back references, audio buffer, picture */
   private static SKIP = new Set(['roms', 'cart', 'disk', 'disk9', 'diskImage', 'diskImage9', 'vdrive', 'vdrive9',
-    'drive', 'drive9', 'tape', 'traps', 'driveRom', 'activeV', 'bus', 'mem', 'frameBuffer', 'buffer', 'rom', 'gcr', 'image', 'dirty', 'lo', 'hi', 'source', 'rec', 'done']);
+    'drive', 'drive9', 'tape', 'traps', 'driveRom', 'activeV', 'bus', 'mem', 'frameBuffer', 'buffer', 'rom', 'gcr', 'image', 'dirty', 'lo', 'hi', 'source', 'rec', 'done', 'breakpoints']);
 
   /** Machine state (media excluded: they are mounted again before restoring). */
   saveState() {

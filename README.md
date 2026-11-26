@@ -1,6 +1,6 @@
 # droid64
 
-Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
+Emulatore Commodore 64 (PAL e NTSC) scritto in TypeScript che gira nel browser.
 
 ## Cosa emula
 - **CPU 6510**: tutti gli opcode, compresi quelli non documentati; supera la suite di test di Klaus Dormann
@@ -21,6 +21,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 - **Dischi G64**: superficie GCR completa con mezze tracce e sincronismi non allineati ai byte, quindi le protezioni anticopia che il D64 perde; letti e scritti dal 1541 emulato e scaricabili come `.g64`
 - **Dischi D71 (1571) e D81 (1581)** con il drive virtuale: lettura, directory, salvataggio, cancellazione, rinomina e formattazione, dischi vuoti
 - **App installabile (PWA)**: manifest, icone e service worker con cache per versione; funziona offline e segnala gli aggiornamenti
+- **PAL o NTSC**: 312 righe × 63 cicli a 985 248 Hz oppure 263 righe × 65 cicli a 1 022 727 Hz; il KERNAL riconosce il sistema da solo, e SID, CIA, drive e nastro seguono l'orologio scelto
 - **Effetto televisore** (facoltativo): linee di scansione allineate alle righe del C64, pixel morbidi, angoli arrotondati e vignettatura, solo CSS
 - **Schermata e registrazione audio**: immagine PNG dello schermo (768×544) e registrazione del SID in WAV, presa direttamente dall'emulazione (anche in turbo o senza audio)
 - **Snapshot**: stato completo della macchina (CPU, memoria, VIC, SID, CIA, REU, cartuccia, 1541 emulati con testina e memoria, dischi, nastro e configurazione) salvato nel database del browser, scaricabile e riapribile da file; il ripristino controlla che le ROM siano le stesse

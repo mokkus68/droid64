@@ -11,6 +11,8 @@ export class CIA {
   todLatch: number[] | null = null;
   todStopped = false;
   private todDiv = 0;
+  /** video frames per tenth of a second (PAL 5, NTSC 6) */
+  framesPerTenth = 5;
   sdr = 0;
 
   /** external input hooks */
@@ -66,7 +68,7 @@ export class CIA {
   /** Called at 50 Hz (per frame) to drive the TOD clock. */
   tickTOD() {
     if (this.todStopped) return;
-    if (++this.todDiv < 5) return;
+    if (++this.todDiv < this.framesPerTenth) return;
     this.todDiv = 0;
     const bcdInc = (v: number) => { let lo = (v & 15) + 1, hi = v >> 4; if (lo > 9) { lo = 0; hi++; } return (hi << 4) | lo; };
     const t = this.tod;

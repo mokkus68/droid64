@@ -19,6 +19,8 @@ export class Drive1541 implements Bus {
   ram = new Uint8Array(2048);
   rom: Uint8Array;
   cycles = 0;          // drive clock
+  /** drive cycles per C64 cycle (the drive always runs at 1 MHz) */
+  perC64 = DRIVE_PER_C64;
   private target = 0;  // drive clock the C64 has reached
 
   // mechanics
@@ -216,7 +218,7 @@ export class Drive1541 implements Bus {
 
   /** Run the drive until its clock reaches the given C64 time (in C64 cycles). */
   runUntil(c64Cycles: number) {
-    this.target = c64Cycles * DRIVE_PER_C64;
+    this.target = c64Cycles * this.perC64;
     const cpu = this.cpu;
     while (this.cycles < this.target) {
       const c = cpu.step();
@@ -234,7 +236,7 @@ export class Drive1541 implements Bus {
 
   /** Re-align clocks (after the C64 resets its time base). */
   resetClock(c64Cycles: number) {
-    const now = c64Cycles * DRIVE_PER_C64;
+    const now = c64Cycles * this.perC64;
     this.nextBitAt += now - this.cycles;
     this.cycles = now;
   }

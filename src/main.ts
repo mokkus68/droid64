@@ -1,4 +1,4 @@
-import { C64, Roms, FRAME_HZ } from './c64';
+import { C64, Roms } from './c64';
 import type { SidModel } from './sid';
 import { SCREEN_W, SCREEN_H, PALETTE } from './vic';
 import { KeyboardMapper, JOY_KEYS } from './keyboard';
@@ -70,6 +70,7 @@ function draw() {
 function rebuildMachine() {
   romInfo = currentRoms();
   c64 = new C64(romInfo.roms, audio ? audio.ctx.sampleRate : 44100);
+  if (videoNtsc) c64.setStandard(true);
   if (disk) c64.mountDisk(disk, diskImage);
   wireMachine();
   if (cartridge) c64.insertCartridge(cartridge);
@@ -136,7 +137,6 @@ function updateAudioStatus() {
 // ---------- main loop ----------
 let paused = false, turbo = false, warping = false;
 let lastTime = performance.now(), acc = 0;
-const frameMs = 1000 / FRAME_HZ;
 
 let framesRun = 0;
 function step() {
@@ -166,6 +166,7 @@ function loop(now: number) {
     } else {
       acc += dt;
       let n = 0;
+      const frameMs = 1000 / c64.frameHz;
       while (acc >= frameMs && n < 4) { step(); acc -= frameMs; n++; }
       if (n === 4) acc = 0;
     }
@@ -1045,6 +1046,26 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-sid]')) b.ad
 });
 setSidModel(sidModel);
 
+// PAL / NTSC
+let videoNtsc = store.get('c64.video') === 'ntsc';
+function setVideo(ntsc: boolean) {
+  videoNtsc = ntsc;
+  store.set('c64.video', ntsc ? 'ntsc' : 'pal');
+  if (c64.ntsc !== ntsc) {
+    c64.setStandard(ntsc);
+    if (disk) c64.mountDisk(disk, diskImage);
+  }
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-video]')) b.setAttribute('aria-pressed', String((b.dataset.video === 'ntsc') === ntsc));
+  $('video-status').textContent = ntsc ? 'NTSC · 1 022 727 Hz' : 'PAL · 985 248 Hz';
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-video]')) b.addEventListener('click', () => {
+  const ntsc = b.dataset.video === 'ntsc';
+  if (ntsc === videoNtsc) return;
+  setVideo(ntsc);
+  toast(ntsc ? 'C64 americano (NTSC, 60 Hz): il C64 è stato riavviato' : 'C64 europeo (PAL, 50 Hz): il C64 è stato riavviato');
+});
+setVideo(videoNtsc);
+
 // TV effect: the scanline period follows the size the C64 picture is actually shown at
 let crtOn = store.get('c64.crt') === '1';
 function layoutCrt() {
@@ -1101,7 +1122,7 @@ function buildSnapshot() {
     format: SNAP_FORMAT, version: 1, app: (document.getElementById('version')?.textContent ?? '').trim(),
     created: Date.now(), title: snapshotTitle(), thumb: screenThumb(),
     roms: romPrint(), driveRom: c64.drive ? fingerprint(b64ToBytes(userRoms.dos1541!)) : null,
-    config: { reu: reuSize, trueDrive: !!c64.drive, drive9: drive9On, ports: portDev, joyPort, sid: sidModel },
+    config: { reu: reuSize, trueDrive: !!c64.drive, drive9: drive9On, ports: portDev, joyPort, sid: sidModel, ntsc: videoNtsc },
     media: {
       disk8: img8 ? { name: diskName, data: bytesToBase64(img8) } : null,
       disk9: img9 ? { name: disk9Name, data: bytesToBase64(img9) } : null,
@@ -1139,6 +1160,7 @@ function applySnapshot(snap: Snapshot) {
   if (!!c64.drive !== snap.config.trueDrive) setTrueDrive(snap.config.trueDrive);
   if (drive9On !== snap.config.drive9) setDrive9(snap.config.drive9);
   if (snap.config.sid) setSidModel(snap.config.sid as SidModel);
+  if (!!snap.config.ntsc !== videoNtsc) setVideo(!!snap.config.ntsc);
   portDev = snap.config.ports as [PortDev, PortDev];
   applyPortDevices();
   setJoyPort(snap.config.joyPort);
@@ -1447,7 +1469,7 @@ function updateLeds() {
   if (now - fpsT > 1000) {
     const frames = framesRun - lastFrameCount;
     lastFrameCount = framesRun;
-    const pct = Math.round((frames / ((now - fpsT) / 1000)) / FRAME_HZ * 100);
+    const pct = Math.round((frames / ((now - fpsT) / 1000)) / c64.frameHz * 100);
     $('speed').textContent = `${Math.max(0, pct)}%`;
     fpsT = now; fpsFrames = 0;
     updateAudioStatus();
