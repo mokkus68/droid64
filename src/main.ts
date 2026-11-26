@@ -1,4 +1,5 @@
 import { C64, Roms, FRAME_HZ } from './c64';
+import type { SidModel } from './sid';
 import { SCREEN_W, SCREEN_H, PALETTE } from './vic';
 import { KeyboardMapper, JOY_KEYS } from './keyboard';
 import { parseD64, parseT64, D64File, DiskImage } from './media';
@@ -76,6 +77,7 @@ function rebuildMachine() {
   c64.enableDrive9(drive9On);
   if (disk9Image) c64.mountDisk(listDisk(disk9Image), disk9Image, false, 9);
   c64.setReu(reuSize);
+  c64.sid.model = sidModel;
   applyPortDevices();
   applyDriveMode();
   updateRomStatus();
@@ -1027,6 +1029,22 @@ for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.ad
 c64.setReu(reuSize);
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-reu]')) b.setAttribute('aria-pressed', String(Number(b.dataset.reu) === reuSize));
 
+// ---------- audio and video ----------
+let sidModel: SidModel = store.get('c64.sid') === '8580' ? '8580' : '6581';
+function setSidModel(m: SidModel) {
+  sidModel = m;
+  c64.sid.model = m;
+  store.set('c64.sid', m);
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-sid]')) b.setAttribute('aria-pressed', String(b.dataset.sid === m));
+}
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-sid]')) b.addEventListener('click', () => {
+  setSidModel(b.dataset.sid as SidModel);
+  toast(sidModel === '6581'
+    ? 'SID 6581 (C64 "biscottiera"): filtro più scuro, voci campionate udibili'
+    : 'SID 8580 (C64C): filtro più lineare, forme d\'onda combinate più forti, voci campionate quasi mute');
+});
+setSidModel(sidModel);
+
 // ---------- snapshots ----------
 const SNAP_FORMAT = 'droid64-snapshot';
 const romPrint = () => fingerprint(romInfo.roms.basic, romInfo.roms.kernal, romInfo.roms.chargen);
@@ -1056,7 +1074,7 @@ function buildSnapshot() {
     format: SNAP_FORMAT, version: 1, app: (document.getElementById('version')?.textContent ?? '').trim(),
     created: Date.now(), title: snapshotTitle(), thumb: screenThumb(),
     roms: romPrint(), driveRom: c64.drive ? fingerprint(b64ToBytes(userRoms.dos1541!)) : null,
-    config: { reu: reuSize, trueDrive: !!c64.drive, drive9: drive9On, ports: portDev, joyPort },
+    config: { reu: reuSize, trueDrive: !!c64.drive, drive9: drive9On, ports: portDev, joyPort, sid: sidModel },
     media: {
       disk8: img8 ? { name: diskName, data: bytesToBase64(img8) } : null,
       disk9: img9 ? { name: disk9Name, data: bytesToBase64(img9) } : null,
@@ -1093,6 +1111,7 @@ function applySnapshot(snap: Snapshot) {
   if (reuSize !== snap.config.reu) setReuSize(snap.config.reu);
   if (!!c64.drive !== snap.config.trueDrive) setTrueDrive(snap.config.trueDrive);
   if (drive9On !== snap.config.drive9) setDrive9(snap.config.drive9);
+  if (snap.config.sid) setSidModel(snap.config.sid as SidModel);
   portDev = snap.config.ports as [PortDev, PortDev];
   applyPortDevices();
   setJoyPort(snap.config.joyPort);

@@ -5,7 +5,7 @@ Emulatore Commodore 64 (PAL) scritto in TypeScript che gira nel browser.
 ## Cosa emula
 - **CPU 6510**: tutti gli opcode, compresi quelli non documentati; supera la suite di test di Klaus Dormann
 - **VIC-II**: modalità testo, multicolore, ECM, bitmap, 8 sprite con collisioni, interrupt raster, apertura dei bordi superiore e inferiore (rendering per riga)
-- **SID**: 3 voci, forme d'onda, ADSR, filtro, ring modulation e sync
+- **SID** 6581 o 8580: 3 voci, forme d'onda (anche combinate, con un modello dell'interazione fra i bit), ADSR, ring modulation e sync; filtro con curva di taglio e risonanza diverse per i due modelli; campioni via registro del volume udibili sul 6581
 - **2× CIA 6526**: timer, TOD, tastiera, joystick, interrupt
 - **Comandi touch**: joystick a schermo (8 direzioni, multitocco con il pulsante di fuoco) e tasti Spazio, Return, Run/Stop, F1–F7, Y, N; si attiva da solo sui telefoni
 - **Schermo intero da telefono**: emulatore in alto e sotto la tastiera del C64 (SHIFT, C= e CTRL valgono per il tasto successivo, SHIFT LOCK resta attivo) oppure il joystick; funziona anche su iPhone. Da computer lo schermo intero mostra solo lo schermo del C64, il più grande possibile
