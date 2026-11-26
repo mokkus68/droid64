@@ -212,8 +212,38 @@ export class SID {
     const buf = this.buffer;
     const next = (this.writePos + 1) & (buf.length - 1);
     if (next === this.readPos) this.readPos = (this.readPos + 1) & (buf.length - 1); // overwrite oldest
+    if (this.rec) {
+      if (this.recLen >= this.rec.length) this.growRec();
+      if (this.rec) this.rec[this.recLen++] = sample;
+    }
     buf[this.writePos] = sample;
     this.writePos = next;
+  }
+
+  // ---- recording: every generated sample, in emulated time (turbo and mute included) ----
+  private rec: Float32Array | null = null;
+  private recLen = 0;
+  private recMax = 0;
+  get recording() { return this.rec !== null; }
+  get recordedSeconds() { return this.recLen / this.sampleRate; }
+  startRecording(maxSeconds: number) {
+    this.recMax = Math.ceil(maxSeconds * this.sampleRate);
+    this.rec = new Float32Array(this.sampleRate * 10);
+    this.recLen = 0;
+  }
+  private growRec() {
+    if (!this.rec) return;
+    if (this.rec.length >= this.recMax) { this.done = this.rec.subarray(0, this.recLen); this.rec = null; return; }
+    const n = new Float32Array(Math.min(this.recMax, this.rec.length * 2));
+    n.set(this.rec);
+    this.rec = n;
+  }
+  private done: Float32Array | null = null;
+  /** Stop and return the recorded samples (also after the time limit stopped it). */
+  stopRecording(): Float32Array | null {
+    const out = this.rec ? this.rec.slice(0, this.recLen) : this.done;
+    this.rec = null; this.done = null; this.recLen = 0;
+    return out;
   }
 
   available(): number {

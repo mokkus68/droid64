@@ -314,6 +314,8 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         <button type="button" id="turbo" aria-pressed="false" title="Esegue alla massima velocità">Turbo</button>
         <button type="button" class="js-freeze freeze" hidden title="Pulsante freeze della cartuccia">Freeze</button>
         <button type="button" class="js-snap" title="Salva lo stato completo del C64">Snapshot</button>
+        <button type="button" id="shot" title="Salva un'immagine dello schermo (PNG)">Schermata</button>
+        <button type="button" id="rec" class="rec" aria-pressed="false" title="Registra il suono del SID (WAV)">⏺ Audio</button>
         <button type="button" id="fullscreen" aria-pressed="false">Schermo intero</button>
         <button type="button" id="touch-toggle" aria-pressed="false" title="Mostra joystick e tasti a schermo">Joystick a schermo</button>
         <span class="spacer"></span>
@@ -517,15 +519,6 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       </section>
 
       <section class="panel">
-        <h2>Digita o incolla</h2>
-        <form id="type-form">
-          <textarea id="type-text" placeholder='10 PRINT "CIAO"&#10;20 GOTO 10&#10;RUN' aria-label="Testo da digitare nel C64"></textarea>
-          <div class="row" style="margin-top:8px"><button type="submit">Invia al C64</button></div>
-        </form>
-        <p>Utile su telefono. Con lo schermo selezionato puoi anche incollare con <kbd>Ctrl</kbd>+<kbd>V</kbd>.</p>
-      </section>
-
-      <section class="panel">
         <h2>Tasti</h2>
         <dl class="keys">
           <dt><kbd>Esc</kbd></dt><dd>RUN/STOP</dd>
@@ -535,6 +528,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
           <dt><kbd>Home</kbd></dt><dd>CLR/HOME</dd>
           <dt><kbd>F1</kbd>–<kbd>F8</kbd></dt><dd>tasti funzione</dd>
           <dt><kbd>\</kbd> <kbd>_</kbd> <kbd>^</kbd></dt><dd>£ ← ↑</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>V</kbd></dt><dd>incolla un testo (per esempio un listato BASIC) con lo schermo selezionato</dd>
         </dl>
       </section>
     </aside>

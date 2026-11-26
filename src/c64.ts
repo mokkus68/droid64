@@ -447,7 +447,7 @@ export class C64 implements Bus {
   // ---------- snapshots ----------
   /** fields never saved: ROMs, media (saved separately), back references, audio buffer, picture */
   private static SKIP = new Set(['roms', 'cart', 'disk', 'disk9', 'diskImage', 'diskImage9', 'vdrive', 'vdrive9',
-    'drive', 'drive9', 'tape', 'traps', 'driveRom', 'activeV', 'bus', 'mem', 'frameBuffer', 'buffer', 'rom', 'gcr', 'image', 'dirty', 'lo', 'hi', 'source']);
+    'drive', 'drive9', 'tape', 'traps', 'driveRom', 'activeV', 'bus', 'mem', 'frameBuffer', 'buffer', 'rom', 'gcr', 'image', 'dirty', 'lo', 'hi', 'source', 'rec', 'done']);
 
   /** Machine state (media excluded: they are mounted again before restoring). */
   saveState() {

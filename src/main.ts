@@ -1304,14 +1304,65 @@ vol.addEventListener('input', () => {
   startAudio(); updateAudioStatus();
 });
 
-$('type-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const ta = $<HTMLTextAreaElement>('type-text');
-  if (!ta.value) return;
-  c64.typeText(ta.value.endsWith('\n') ? ta.value : ta.value + '\n');
-  ta.value = '';
-  startAudio();
-  toast('Sto digitando il testo nel C64…');
+// ---------- screenshot and audio recording ----------
+const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+function downloadBlob(name: string, blob: Blob) {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    return true;
+  } catch { toast('Il browser ha bloccato lo scaricamento'); return false; }
+}
+$('shot').addEventListener('click', () => {
+  // pixels doubled, without smoothing: a sharp 768×544 image of the C64 screen
+  const out = document.createElement('canvas');
+  out.width = SCREEN_W * 2; out.height = SCREEN_H * 2;
+  const g = out.getContext('2d')!;
+  g.imageSmoothingEnabled = false;
+  g.drawImage(canvas, 0, 0, out.width, out.height);
+  out.toBlob((b) => {
+    if (b && downloadBlob(`droid64-${stamp()}.png`, b)) toast('Schermata salvata (PNG 768×544)');
+  }, 'image/png');
+  screenWrap.focus();
+});
+let recTimer = 0;
+function stopRecording() {
+  const pcm = c64.sid.stopRecording();
+  clearInterval(recTimer);
+  $('rec').setAttribute('aria-pressed', 'false');
+  $('rec').textContent = '⏺ Audio';
+  if (!pcm || !pcm.length) { toast('Registrazione vuota'); return; }
+  const sr = c64.sid.sampleRate;
+  // 16-bit mono WAV
+  const buf = new ArrayBuffer(44 + pcm.length * 2);
+  const v = new DataView(buf);
+  const str = (o: number, t: string) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, pcm.length * 2, true);
+  for (let i = 0; i < pcm.length; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, pcm[i] * 2)) * 32767, true);
+  const secs = pcm.length / sr;
+  if (downloadBlob(`droid64-${stamp()}.wav`, new Blob([buf], { type: 'audio/wav' }))) {
+    toast(`Registrazione salvata: ${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')} (WAV)`);
+  }
+}
+$('rec').addEventListener('click', () => {
+  if (c64.sid.recording) { stopRecording(); return; }
+  c64.sid.startRecording(10 * 60);
+  $('rec').setAttribute('aria-pressed', 'true');
+  const t0 = performance.now();
+  recTimer = window.setInterval(() => {
+    const s = c64.sid.recordedSeconds;
+    $('rec').textContent = `⏹ ${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    if (!c64.sid.recording) stopRecording(); // reached the 10 minute limit
+    void t0;
+  }, 250);
+  toast('Registrazione del SID avviata: premi di nuovo per fermarla e salvare il file WAV (massimo 10 minuti)');
+  screenWrap.focus();
 });
 
 $('demo').addEventListener('click', () => {

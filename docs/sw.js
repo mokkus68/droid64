@@ -1,6 +1,6 @@
 // droid64 service worker: keeps the app available offline.
 // The cache name changes with every version, so a new deploy installs a fresh copy.
-const CACHE = 'droid64-v1.10.1';
+const CACHE = 'droid64-v1.11.0';
 const CORE = ['./', './index.html', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png', './icons/apple-touch-icon.png', './icons/favicon-32.png'];
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];

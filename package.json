@@ -1,6 +1,6 @@
 {
   "name": "droid64",
-  "version": "1.10.1",
+  "version": "1.11.0",
   "private": true,
   "description": "Emulatore Commodore 64 in TypeScript per il browser",
   "license": "MIT",
