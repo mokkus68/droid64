@@ -24,6 +24,7 @@ Emulatore Commodore 64 (PAL e NTSC) scritto in TypeScript che gira nel browser.
 - **PAL o NTSC**: 312 righe × 63 cicli a 985 248 Hz oppure 263 righe × 65 cicli a 1 022 727 Hz; il KERNAL riconosce il sistema da solo, e SID, CIA, drive e nastro seguono l'orologio scelto
 - **Effetto televisore** (facoltativo): linee di scansione allineate alle righe del C64, pixel morbidi, angoli arrotondati e vignettatura, solo CSS
 - **Schermata e registrazione audio**: immagine PNG dello schermo (768×544) e registrazione del SID in WAV, presa direttamente dall'emulazione (anche in turbo o senza audio)
+- **Monitor del linguaggio macchina** (comandi in stile VICE): registri, memoria, disassemblatore con istruzioni non documentate, scrittura, ricerca, punti di arresto, passo singolo e passo che salta le subroutine; legge l'I/O senza effetti collaterali
 - **Snapshot**: stato completo della macchina (CPU, memoria, VIC, SID, CIA, REU, cartuccia, 1541 emulati con testina e memoria, dischi, nastro e configurazione) salvato nel database del browser, scaricabile e riapribile da file; il ripristino controlla che le ROM siano le stesse
 - **Caricamento**: PRG, D64, D71, D81, T64 e TAP
 
@@ -60,6 +61,7 @@ La versione (`version` in `package.json`) e la data di compilazione compaiono in
 | `src/gcr.ts` | codifica GCR, decodifica a livello di bit, formato G64 |
 | `src/geometry.ts` | geometrie D64, D71 e D81 (tracce, settori, BAM) |
 | `src/d64write.ts` | scrittura su D64: BAM, directory, cancellazione, rinomina, formattazione |
+| `src/monitor.ts` | monitor del linguaggio macchina |
 | `src/snapshot.ts` | cattura e ripristino dello stato, archivio IndexedDB |
 | `src/reu.ts` | espansione di memoria REU |
 | `src/tape.ts` | registratore (Datasette) da file .TAP |

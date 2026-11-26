@@ -72,6 +72,38 @@ for (let i = 0; i < 256; i++) OPID[i] = OPNAMES.indexOf(OPS[i]);
 const id = (n: string) => OPNAMES.indexOf(n);
 const O = Object.fromEntries(OPNAMES.map((n) => [n, id(n)])) as Record<string, number>;
 
+// ---- disassembler (used by the machine-code monitor) ----
+const ILLEGAL = new Set(['SLO', 'RLA', 'SRE', 'RRA', 'SAX', 'LAX', 'DCP', 'ISC', 'ANC', 'ALR', 'ARR', 'SBX', 'ANE', 'LXA', 'LAS', 'SHA', 'SHX', 'SHY', 'TAS', 'JAM']);
+const LEN = [1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 2, 2, 2]; // by addressing mode
+export function instructionLength(op: number) { return op === 0x00 ? 1 : LEN[MODES[op]]; }
+const hex = (v: number, n: number) => v.toString(16).toUpperCase().padStart(n, '0');
+
+/** Disassemble the instruction at addr. `read` must not have side effects. */
+export function disassemble(read: (a: number) => number, addr: number): { len: number; bytes: number[]; text: string; illegal: boolean } {
+  const op = read(addr);
+  const len = instructionLength(op);
+  const bytes = [op];
+  for (let i = 1; i < len; i++) bytes.push(read((addr + i) & 0xffff));
+  const b1 = bytes[1] ?? 0, w = b1 | ((bytes[2] ?? 0) << 8);
+  let arg = '';
+  switch (op === 0x00 ? M.IMP : MODES[op]) {
+    case M.ACC: arg = 'A'; break;
+    case M.IMM: arg = `#$${hex(b1, 2)}`; break;
+    case M.ZP: arg = `$${hex(b1, 2)}`; break;
+    case M.ZPX: arg = `$${hex(b1, 2)},X`; break;
+    case M.ZPY: arg = `$${hex(b1, 2)},Y`; break;
+    case M.ABS: arg = `$${hex(w, 4)}`; break;
+    case M.ABX: arg = `$${hex(w, 4)},X`; break;
+    case M.ABY: arg = `$${hex(w, 4)},Y`; break;
+    case M.IND: arg = `($${hex(w, 4)})`; break;
+    case M.IZX: arg = `($${hex(b1, 2)},X)`; break;
+    case M.IZY: arg = `($${hex(b1, 2)}),Y`; break;
+    case M.REL: arg = `$${hex((addr + 2 + (b1 < 128 ? b1 : b1 - 256)) & 0xffff, 4)}`; break;
+  }
+  const name = OPS[op];
+  return { len, bytes, text: arg ? `${name} ${arg}` : name, illegal: ILLEGAL.has(name) };
+}
+
 export const FLAG_C = 1, FLAG_Z = 2, FLAG_I = 4, FLAG_D = 8, FLAG_B = 16, FLAG_U = 32, FLAG_V = 64, FLAG_N = 128;
 
 export class CPU {

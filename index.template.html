@@ -190,6 +190,19 @@ body.fs-open { overflow: hidden; }
 #screen-wrap.crt .crt-overlay { display: block; }
 #screen-wrap.crt #screen { image-rendering: auto; filter: blur(.45px) contrast(1.08) saturate(1.18) brightness(1.08); border-radius: 12px; }
 
+/* machine-code monitor */
+.mon { gap: 8px; }
+.mon-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mon-head button { min-height: 30px; padding: 5px 10px; font-size: 12px; }
+#mon[data-stopped="1"] #mon-state { color: #e0a33a; }
+#mon[data-stopped="0"] #mon-state { color: var(--ok); }
+.mon-out { font: 12.5px/1.45 var(--font-mono); background: #0f0e1f; color: #c9c7ff; border: 1px solid var(--case-edge); border-radius: var(--r); padding: 8px 10px; height: 300px; overflow: auto; white-space: pre; tab-size: 8; }
+.mon-out .mon-cmd { color: #f2ead8; }
+.mon-out .mon-dim { color: var(--muted); }
+.mon-line { display: flex; align-items: center; gap: 6px; background: #0f0e1f; border: 1px solid var(--case-edge); border-radius: var(--r); padding: 0 10px; font-family: var(--font-mono); color: #c9c7ff; }
+.mon-line input { flex: 1; min-width: 0; background: transparent; border: 0; color: #f2ead8; font: 13px/1 var(--font-mono); padding: 10px 0; outline: none; }
+.mon-line:focus-within { outline: 2px solid var(--vic-blue); outline-offset: 2px; }
+
 /* snapshots */
 #snap-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 #snap-list li { display: flex; gap: 10px; align-items: flex-start; min-width: 0; }
@@ -328,6 +341,7 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
         <button type="button" class="js-snap" title="Salva lo stato completo del C64">Snapshot</button>
         <button type="button" id="shot" title="Salva un'immagine dello schermo (PNG)">Schermata</button>
         <button type="button" id="rec" class="rec" aria-pressed="false" title="Registra il suono del SID (WAV)">⏺ Audio</button>
+        <button type="button" id="mon-open" title="Monitor del linguaggio macchina">Monitor</button>
         <button type="button" id="fullscreen" aria-pressed="false">Schermo intero</button>
         <button type="button" id="touch-toggle" aria-pressed="false" title="Mostra joystick e tasti a schermo">Joystick a schermo</button>
         <span class="spacer"></span>
@@ -562,7 +576,21 @@ button.rec[aria-pressed="true"] { background: #c8423b; border-color: #c8423b; co
       </section>
     </aside>
   </div>
-  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. C64 PAL o NTSC: CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Action Replay e Final Cartridge III (con pulsante Freeze), Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
+  <section class="panel mon" id="mon" hidden data-stopped="1" aria-label="Monitor del linguaggio macchina">
+    <div class="mon-head">
+      <h2>Monitor · <span id="mon-state">fermo</span></h2>
+      <div class="row">
+        <button type="button" id="mon-step" title="Esegue un'istruzione (z)">Passo</button>
+        <button type="button" id="mon-over" title="Esegue un passo saltando le subroutine (n)">Salta subroutine</button>
+        <button type="button" id="mon-go" title="Riprende l'esecuzione (g) o la ferma">Continua / Ferma</button>
+        <button type="button" id="mon-close" title="Riprende e chiude (x)">Chiudi</button>
+      </div>
+    </div>
+    <div id="mon-out" class="mon-out" role="log" aria-live="polite"></div>
+    <label class="mon-line" for="mon-in"><span aria-hidden="true">.</span><input id="mon-in" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Comando del monitor" placeholder="? per l'aiuto · d c000 · m 0400 · b 080d · z · g"></label>
+  </section>
+
+  <footer><strong>droid64 v{{VERSION}}</strong> · compilato il {{BUILT}}. C64 PAL o NTSC: CPU 6510, VIC-II, SID e CIA emulati in TypeScript. ROM libere: <a href="https://github.com/MEGA65/open-roms" target="_blank" rel="noopener">MEGA65 Open ROMs</a> (LGPL-3.0). Drive 8: virtuale veloce (caricamenti tramite KERNAL) oppure 1541 emulato con la sua ROM, che supporta anche i fastloader. Nastri .TAP: registratore emulato a livello di impulsi, compatibile anche con i turbo loader. Monitor del linguaggio macchina con disassemblatore e punti di arresto. Cartucce .CRT supportate: normali 8K/16K/Ultimax, Action Replay e Final Cartridge III (con pulsante Freeze), Ocean, EasyFlash, Magic Desk, System 3, Dinamic, Fun Play, Super Games, Simons' BASIC, Epyx FastLoad.</footer>
 </div>
 <div id="toast" role="status" aria-live="polite"></div>
 <script>/*BUNDLE*/</script>

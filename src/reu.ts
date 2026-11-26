@@ -52,6 +52,9 @@ export class REU {
     return 0xff;
   }
 
+  /** Read without side effects (for the monitor). */
+  peek(addr: number) { return (addr & 0x1f) === 0 ? this.status : this.read(addr); }
+
   write(addr: number, v: number) {
     switch (addr & 0x1f) {
       case 1:

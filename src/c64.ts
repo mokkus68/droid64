@@ -189,6 +189,26 @@ export class C64 implements Bus {
     this.ram[addr] = v;
   }
 
+  /** Read memory as the CPU sees it, without side effects on I/O chips (for the monitor). */
+  peek(addr: number): number {
+    addr &= 0xffff;
+    if (addr < 2 || this.map[addr >> 12] !== M_IO) return this.read(addr);
+    switch ((addr >> 8) & 0xf) {
+      case 0: case 1: case 2: case 3: {
+        const r = addr & 0x3f;
+        if (r === 0x1e) return this.vic.sprSprColl;
+        if (r === 0x1f) return this.vic.sprBgColl;
+        return this.vic.read(addr);
+      }
+      case 4: case 5: case 6: case 7: return this.ioRead(addr);
+      case 8: case 9: case 0xa: case 0xb: return (this.colorRam[addr & 0x3ff] & 0x0f) | 0xf0;
+      case 0xc: return this.cia1.peek(addr);
+      case 0xd: return this.cia2.peek(addr);
+      case 0xe: return 0xff; // cartridge I/O: reading can switch banks
+      default: return this.reu ? this.reu.peek(addr) : 0xff;
+    }
+  }
+
   /** Insert (or remove with null) a cartridge; the machine is reset. */
   insertCartridge(cart: Cartridge | null) {
     this.cart = cart;

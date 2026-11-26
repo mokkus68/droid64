@@ -7,6 +7,7 @@ import { OPEN_BASIC, OPEN_KERNAL, OPEN_CHARGEN } from './roms';
 import { DEMO } from './demo';
 import { buildKeyboard } from './vkbd';
 import { Cartridge } from './cartridge';
+import { Monitor } from './monitor';
 import { blankDisk, isDiskImageSize, geometryFor, DiskKind } from './geometry';
 import { Tape, blankTap } from './tape';
 import { isG64, parseG64, gcrDiskToD64 } from './gcr';
@@ -139,16 +140,20 @@ let paused = false, turbo = false, warping = false;
 let lastTime = performance.now(), acc = 0;
 
 let framesRun = 0;
-function step() {
+/** Run one frame; returns false if a breakpoint stopped it (the monitor takes over). */
+function step(): boolean {
+  if (monStopped) return false;
   keyboard.apply(c64.keys);
-  c64.runFrame();
+  const done = c64.runFrame();
   framesRun++;
+  if (!done && c64.breakHit) { onBreakpoint(); return false; }
+  return true;
 }
 
 function loop(now: number) {
   const dt = Math.min(now - lastTime, 100);
   lastTime = now;
-  if (!paused) {
+  if (!paused && !monStopped) {
     pollGamepad();
     // with the emulated 1541, run flat out while the drive motor spins (loading at real speed is slow)
     warping = turbo || (autoTurbo && !!c64.drive && c64.drive.motor) || (tapeTurbo && !!c64.tape && c64.tape.running);
@@ -156,18 +161,18 @@ function loop(now: number) {
     if (warping) {
       const t0 = performance.now();
       let n = 0;
-      while (performance.now() - t0 < 14 && n < 40) { step(); n++; }
+      while (performance.now() - t0 < 14 && n < 40 && step()) n++;
       c64.sid.readPos = c64.sid.writePos;
     } else if (audio && audio.ctx.state === 'running') {
       // pace emulation by the audio clock: keep ~3 frames of samples buffered
       const target = audio.ctx.sampleRate * 0.06 + 1024;
       let n = 0;
-      while (c64.sid.available() < target && n < 4) { step(); n++; }
+      while (c64.sid.available() < target && n < 4 && step()) n++;
     } else {
       acc += dt;
       let n = 0;
       const frameMs = 1000 / c64.frameHz;
-      while (acc >= frameMs && n < 4) { step(); acc -= frameMs; n++; }
+      while (acc >= frameMs && n < 4 && step()) { acc -= frameMs; n++; }
       if (n === 4) acc = 0;
     }
     draw();
@@ -1373,6 +1378,73 @@ vol.addEventListener('input', () => {
   if (audio) audio.gain.gain.value = volume;
   startAudio(); updateAudioStatus();
 });
+
+// ---------- machine-code monitor ----------
+let monStopped = false;           // the monitor holds the emulation
+const mlmon = new Monitor(() => c64);
+const monOut = $('mon-out');
+const monIn = $<HTMLInputElement>('mon-in');
+const monHistory: string[] = [];
+let monHistPos = 0;
+function monPrint(lines: string[], cls = '') {
+  for (const l of lines) {
+    const div = document.createElement('div');
+    div.textContent = l;
+    if (cls) div.className = cls;
+    monOut.append(div);
+  }
+  while (monOut.childElementCount > 1500) monOut.firstElementChild!.remove();
+  monOut.scrollTop = monOut.scrollHeight;
+}
+function monStatus() {
+  $('mon-state').textContent = monStopped ? 'fermo' : 'in esecuzione';
+  if (monStopped) $('speed').textContent = 'fermo (monitor)';
+  $('mon').dataset.stopped = monStopped ? '1' : '0';
+  for (const id of ['mon-step', 'mon-over']) $<HTMLButtonElement>(id).disabled = !monStopped;
+}
+function openMonitor(reason: string) {
+  const first = $('mon').hidden;
+  $('mon').hidden = false;
+  monStopped = true;
+  if (first && !monOut.childElementCount) monPrint(['Monitor del linguaggio macchina: scrivi ? per l\'elenco dei comandi.'], 'mon-dim');
+  monPrint([reason, mlmon.registers(), mlmon.here()]);
+  monStatus();
+  draw();
+  monIn.focus();
+}
+function onBreakpoint() {
+  const pc = c64.cpu.pc;
+  if (mlmon.tempBreak === pc) { c64.breakpoints.delete(pc); mlmon.tempBreak = -1; openMonitor('— subroutine eseguita'); return; }
+  openMonitor(`— punto di arresto a $${pc.toString(16).toUpperCase().padStart(4, '0')}`);
+}
+mlmon.onResume = (close) => {
+  c64.resumeFromBreak();
+  monStopped = false;
+  if (close) { $('mon').hidden = true; screenWrap.focus(); }
+  monStatus();
+};
+function monRun(cmd: string) {
+  monPrint(['.' + cmd], 'mon-cmd');
+  try { monPrint(mlmon.exec(cmd)); } catch (e) { monPrint([`? ${(e as Error).message}`]); }
+  draw();
+  monStatus();
+}
+monIn.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const cmd = monIn.value.trim();
+    monIn.value = '';
+    if (!cmd) return;
+    monHistory.push(cmd); monHistPos = monHistory.length;
+    if (!monStopped && !/^[?bdmhr>f]|^del/i.test(cmd)) { monStopped = true; monPrint(['— fermato']); }
+    monRun(cmd);
+  } else if (e.key === 'ArrowUp' && monHistPos > 0) { monIn.value = monHistory[--monHistPos]; e.preventDefault(); }
+  else if (e.key === 'ArrowDown') { monHistPos = Math.min(monHistory.length, monHistPos + 1); monIn.value = monHistory[monHistPos] ?? ''; e.preventDefault(); }
+});
+$('mon-step').addEventListener('click', () => monRun('z'));
+$('mon-over').addEventListener('click', () => monRun('n'));
+$('mon-go').addEventListener('click', () => { if (monStopped) monRun('g'); else openMonitor('— fermato'); });
+$('mon-close').addEventListener('click', () => monRun('x'));
+$('mon-open').addEventListener('click', () => { if ($('mon').hidden) openMonitor('— emulazione fermata'); else monRun('x'); });
 
 // ---------- screenshot and audio recording ----------
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);

@@ -117,6 +117,15 @@ export class CIA {
     return 0xff;
   }
 
+  /** Read without side effects (for the monitor). */
+  peek(reg: number): number {
+    switch (reg & 15) {
+      case 8: case 9: case 10: case 11: return (this.todLatch ?? this.tod)[(reg & 15) - 8];
+      case 13: return this.icrData;
+    }
+    return this.read(reg);
+  }
+
   write(reg: number, v: number) {
     switch (reg & 15) {
       case 0: this.pra = v; this.writePorts(this); break;
